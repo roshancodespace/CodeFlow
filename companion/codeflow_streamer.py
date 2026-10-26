@@ -1351,13 +1351,86 @@ class CodeFlowCompanionServer:
             self.zeroconf = None
             self.service_info = None
 
+    def _free_port_if_occupied(self):
+        """Check if port is already occupied and terminate stale companion instance if found."""
+        try:
+            with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+                s.settimeout(0.2)
+                if s.connect_ex(("127.0.0.1", self.port)) != 0:
+                    return  # Port is free
+        except Exception:
+            return
+
+        logger.warning(
+            f"Port {self.port} is already in use. Checking for stale companion instance..."
+        )
+        current_pid = os.getpid()
+
+        # Try to find and kill stale process holding self.port
+        if shutil.which("fuser"):
+            try:
+                res = subprocess.run(
+                    ["fuser", f"{self.port}/tcp"],
+                    capture_output=True,
+                    text=True,
+                    timeout=1.0,
+                )
+                pids = [
+                    int(p)
+                    for p in res.stdout.strip().split()
+                    if p.isdigit() and int(p) != current_pid
+                ]
+                for pid in pids:
+                    try:
+                        logger.info(
+                            f"Terminating previous instance (PID {pid}) holding port {self.port}..."
+                        )
+                        os.kill(pid, 15)
+                    except Exception:
+                        pass
+                time.sleep(0.4)
+            except Exception:
+                pass
+        elif shutil.which("lsof"):
+            try:
+                res = subprocess.run(
+                    ["lsof", "-t", f"-i:{self.port}"],
+                    capture_output=True,
+                    text=True,
+                    timeout=1.0,
+                )
+                pids = [
+                    int(p)
+                    for p in res.stdout.strip().split()
+                    if p.isdigit() and int(p) != current_pid
+                ]
+                for pid in pids:
+                    try:
+                        logger.info(
+                            f"Terminating previous instance (PID {pid}) holding port {self.port}..."
+                        )
+                        os.kill(pid, 15)
+                    except Exception:
+                        pass
+                time.sleep(0.4)
+            except Exception:
+                pass
+
     async def start(self):
         """Start capture, HTTP server, and mDNS discovery."""
+        self._free_port_if_occupied()
         await self.capture_mgr.start()
 
         self.runner = web.AppRunner(self.app, access_log=None)
         await self.runner.setup()
-        self.site = web.TCPSite(self.runner, self.host, self.port)
+        can_reuse_port = platform.system() != "Windows"
+        self.site = web.TCPSite(
+            self.runner,
+            self.host,
+            self.port,
+            reuse_address=True,
+            reuse_port=can_reuse_port,
+        )
         await self.site.start()
 
         local_ip = self._get_local_ip()
