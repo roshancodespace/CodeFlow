@@ -162,48 +162,99 @@ final orchestratorProvider =
 // --- Companion Host Status Provider ---
 class CompanionStatusState {
   final bool isConnected;
+  final bool isSearching;
   final CompanionInfo? info;
   final int? pingMs;
   final String? error;
 
   const CompanionStatusState({
     this.isConnected = false,
+    this.isSearching = false,
     this.info,
     this.pingMs,
     this.error,
   });
+
+  CompanionStatusState copyWith({
+    bool? isConnected,
+    bool? isSearching,
+    CompanionInfo? info,
+    int? pingMs,
+    String? error,
+  }) {
+    return CompanionStatusState(
+      isConnected: isConnected ?? this.isConnected,
+      isSearching: isSearching ?? this.isSearching,
+      info: info ?? this.info,
+      pingMs: pingMs ?? this.pingMs,
+      error: error ?? this.error,
+    );
+  }
 }
 
 class CompanionStatusNotifier extends StateNotifier<CompanionStatusState> {
   final CompanionApiService _api;
   final LocalStorageService _storage;
+  final CompanionDiscoveryService _discovery;
 
-  CompanionStatusNotifier(this._api, this._storage)
+  CompanionStatusNotifier(this._api, this._storage, this._discovery)
       : super(const CompanionStatusState()) {
     checkConnection();
   }
 
-  Future<void> checkConnection() async {
+  Future<void> connectTo(String host, int port) async {
+    await _storage.setCompanionHost(host);
+    await _storage.setCompanionPort(port);
+    await checkConnection(autoDiscover: false);
+  }
+
+  Future<void> checkConnection({bool autoDiscover = true}) async {
     final host = _storage.companionHost;
     final port = _storage.companionPort;
     final token = _storage.companionToken;
 
     final isHealthy = await _api.checkHealth(host: host, port: port);
-    if (!isHealthy) {
-      state = const CompanionStatusState(
-        isConnected: false,
-        error: 'Companion offline or unreachable',
+    if (isHealthy) {
+      final ping = await _api.measurePingLatency(host: host, port: port);
+      final info = await _api.getInfo(host: host, port: port, token: token);
+
+      state = CompanionStatusState(
+        isConnected: true,
+        isSearching: false,
+        info: info,
+        pingMs: ping,
       );
       return;
     }
 
-    final ping = await _api.measurePingLatency(host: host, port: port);
-    final info = await _api.getInfo(host: host, port: port, token: token);
+    // If configured host is unavailable and autoDiscover is enabled, run quick subnet probe
+    if (autoDiscover) {
+      state = state.copyWith(isSearching: true, error: 'Searching LAN...');
+      try {
+        final comp = await _discovery
+            .discoverCompanions(targetPort: port)
+            .first
+            .timeout(const Duration(seconds: 3));
+        await _storage.setCompanionHost(comp.host);
+        await _storage.setCompanionPort(comp.port);
+        final info = await _api.getInfo(host: comp.host, port: comp.port, token: token);
+        final ping = await _api.measurePingLatency(host: comp.host, port: comp.port);
+        state = CompanionStatusState(
+          isConnected: true,
+          isSearching: false,
+          info: info,
+          pingMs: ping,
+        );
+        return;
+      } catch (_) {
+        // Probe completed without finding candidate
+      }
+    }
 
-    state = CompanionStatusState(
-      isConnected: true,
-      info: info,
-      pingMs: ping,
+    state = const CompanionStatusState(
+      isConnected: false,
+      isSearching: false,
+      error: 'Companion offline or unreachable',
     );
   }
 }
@@ -212,5 +263,6 @@ final companionStatusProvider =
     StateNotifierProvider<CompanionStatusNotifier, CompanionStatusState>((ref) {
   final api = ref.watch(companionApiProvider);
   final storage = ref.watch(localStorageProvider);
-  return CompanionStatusNotifier(api, storage);
+  final discovery = ref.watch(discoveryServiceProvider);
+  return CompanionStatusNotifier(api, storage, discovery);
 });

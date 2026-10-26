@@ -130,13 +130,37 @@ class HomeScreen extends ConsumerWidget {
                         fontFamily: 'monospace',
                       ),
                     ),
-                    const SizedBox(height: 4),
-                    const Text(
-                      'Ensure codeflow_streamer.py is running on your PC.',
-                      style: TextStyle(
-                        fontSize: 11,
-                        color: AppColors.lightTextMuted,
-                      ),
+                    const SizedBox(height: 8),
+                    Wrap(
+                      spacing: 8,
+                      runSpacing: 6,
+                      children: [
+                        FilledButton.tonalIcon(
+                          icon: companionState.isSearching
+                              ? const SizedBox(
+                                  width: 12,
+                                  height: 12,
+                                  child: CircularProgressIndicator(strokeWidth: 2),
+                                )
+                              : const Icon(Icons.radar, size: 14),
+                          label: Text(
+                            companionState.isSearching ? 'Scanning...' : 'Scan LAN',
+                            style: const TextStyle(fontSize: 12),
+                          ),
+                          onPressed: companionState.isSearching
+                              ? null
+                              : () {
+                                  ref
+                                      .read(companionStatusProvider.notifier)
+                                      .checkConnection(autoDiscover: true);
+                                },
+                        ),
+                        OutlinedButton.icon(
+                          icon: const Icon(Icons.edit_outlined, size: 14),
+                          label: const Text('Set PC IP', style: TextStyle(fontSize: 12)),
+                          onPressed: () => _showQuickIpDialog(context, ref),
+                        ),
+                      ],
                     ),
                   ],
                 ],
@@ -271,6 +295,70 @@ class HomeScreen extends ConsumerWidget {
               }),
           ],
         ),
+      ),
+    );
+  }
+
+  void _showQuickIpDialog(BuildContext context, WidgetRef ref) {
+    final storage = ref.read(localStorageProvider);
+    final initialText =
+        storage.companionHost == '127.0.0.1' ? '' : storage.companionHost;
+    final controller = TextEditingController(text: initialText);
+
+    showDialog(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Connect to PC Companion',
+            style: TextStyle(fontSize: 16)),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const Text(
+              'Enter the LAN address displayed on your PC dashboard (e.g. 192.168.1.5 or 192.168.1.5:8090):',
+              style: TextStyle(
+                  fontSize: 13, color: AppColors.lightTextSecondary),
+            ),
+            const SizedBox(height: 12),
+            TextField(
+              controller: controller,
+              autofocus: true,
+              keyboardType: TextInputType.url,
+              decoration: const InputDecoration(
+                hintText: '192.168.x.x',
+                labelText: 'Host IP',
+                prefixIcon: Icon(Icons.laptop),
+              ),
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx),
+            child: const Text('Cancel'),
+          ),
+          FilledButton(
+            onPressed: () async {
+              final ip = controller.text.trim();
+              if (ip.isNotEmpty) {
+                if (ip.contains(':')) {
+                  final parts = ip.split(':');
+                  final host = parts[0];
+                  final port = int.tryParse(parts[1]) ?? 8090;
+                  await ref
+                      .read(companionStatusProvider.notifier)
+                      .connectTo(host, port);
+                } else {
+                  await ref
+                      .read(companionStatusProvider.notifier)
+                      .connectTo(ip, storage.companionPort);
+                }
+              }
+              if (ctx.mounted) Navigator.pop(ctx);
+            },
+            child: const Text('Connect'),
+          ),
+        ],
       ),
     );
   }

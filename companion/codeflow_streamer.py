@@ -18,6 +18,7 @@ import json
 import logging
 import os
 import platform
+import shutil
 import socket
 import subprocess
 import sys
@@ -88,7 +89,48 @@ class ActiveWindowDetector:
                 return None
 
             elif system == "Linux":
-                # Check for xdotool or xprop
+                # Check Wayland compositors (Hyprland / Sway)
+                if shutil.which("hyprctl"):
+                    try:
+                        res = subprocess.run(
+                            ["hyprctl", "activewindow", "-j"],
+                            capture_output=True,
+                            text=True,
+                            timeout=0.5,
+                        )
+                        if res.returncode == 0 and res.stdout.strip():
+                            data = json.loads(res.stdout)
+                            title = data.get("title") or data.get("initialTitle") or data.get("class")
+                            if title:
+                                return title
+                    except Exception:
+                        pass
+
+                if shutil.which("swaymsg"):
+                    try:
+                        res = subprocess.run(
+                            ["swaymsg", "-t", "get_tree"],
+                            capture_output=True,
+                            text=True,
+                            timeout=0.5,
+                        )
+                        if res.returncode == 0 and res.stdout.strip():
+                            tree = json.loads(res.stdout)
+                            def _find_focused(node):
+                                if node.get("focused"):
+                                    return node.get("name")
+                                for child in node.get("nodes", []) + node.get("floating_nodes", []):
+                                    found = _find_focused(child)
+                                    if found:
+                                        return found
+                                return None
+                            title = _find_focused(tree)
+                            if title:
+                                return title
+                    except Exception:
+                        pass
+
+                # Check for xdotool or xprop (X11)
                 try:
                     res = subprocess.run(
                         ["xdotool", "getactivewindow", "getwindowname"],
@@ -150,6 +192,22 @@ class ScreenCaptureManager:
         self.jpeg_quality = max(10, min(100, jpeg_quality))
         self.crop = crop  # (x, y, w, h)
 
+        # Detect Wayland on Linux (requires grim for non-black frame capture)
+        self.is_wayland = bool(
+            platform.system() == "Linux"
+            and (
+                os.environ.get("WAYLAND_DISPLAY")
+                or os.environ.get("XDG_SESSION_TYPE") == "wayland"
+            )
+        )
+        self._grim_path = shutil.which("grim") if self.is_wayland else None
+        self.has_grim = bool(self._grim_path)
+        self.backend = (
+            "grim (Wayland Native)"
+            if (self.is_wayland and self.has_grim)
+            else ("mss (X11/Desktop)" if mss else "Synthetic")
+        )
+
         self._running = False
         self._task: Optional[asyncio.Task] = None
         self._sct: Optional[Any] = None
@@ -175,6 +233,34 @@ class ScreenCaptureManager:
 
     def list_monitors(self) -> List[Dict[str, Any]]:
         """List available monitors and their dimensions."""
+        if self.is_wayland and shutil.which("hyprctl"):
+            try:
+                res = subprocess.run(
+                    ["hyprctl", "monitors", "-j"],
+                    capture_output=True,
+                    text=True,
+                    timeout=1.0,
+                )
+                if res.returncode == 0 and res.stdout.strip():
+                    data = json.loads(res.stdout)
+                    monitors = []
+                    for i, m in enumerate(data):
+                        monitors.append(
+                            {
+                                "id": i + 1,
+                                "name": m.get("name", f"output-{i}"),
+                                "is_all": False,
+                                "left": m.get("x", 0),
+                                "top": m.get("y", 0),
+                                "width": m.get("width", 1920),
+                                "height": m.get("height", 1080),
+                            }
+                        )
+                    if monitors:
+                        return monitors
+            except Exception as e:
+                logger.debug(f"Failed to query hyprctl monitors: {e}")
+
         if not mss:
             return [{"id": 0, "width": 1920, "height": 1080, "left": 0, "top": 0}]
         try:
@@ -201,16 +287,22 @@ class ScreenCaptureManager:
         """Start the continuous background capture loop."""
         if self._running:
             return
-        if not mss or not Image:
+        if not self.has_grim and (not mss or not Image):
             logger.warning(
-                "mss or Pillow not installed. Generating dummy synthetic frames."
+                "mss/grim or Pillow not installed. Generating dummy synthetic frames."
             )
         self._running = True
         self._task = asyncio.create_task(self._capture_loop())
         logger.info(
-            f"Screen capture started: Monitor {self.monitor_index}, "
+            f"Screen capture started: Backend [{self.backend}], Monitor {self.monitor_index}, "
             f"Target {self.target_fps} FPS, JPEG Quality {self.jpeg_quality}"
         )
+        if self.is_wayland and not self.has_grim:
+            logger.warning(
+                "Wayland session detected without 'grim' installed! Screen capture under Wayland "
+                "requires 'grim' to avoid black screen frames. "
+                "Install with: 'sudo pacman -S grim' or 'sudo apt install grim'."
+            )
 
     async def stop(self):
         """Stop background capture and clean up."""
@@ -253,11 +345,31 @@ class ScreenCaptureManager:
         img.save(buffer, format="JPEG", quality=self.jpeg_quality)
         return buffer.getvalue()
 
+    def _capture_frame_grim(self) -> bytes:
+        """Capture real desktop frame on Wayland via grim directly into JPEG bytes."""
+        cmd = [self._grim_path, "-c", "-t", "jpeg", "-q", str(self.jpeg_quality)]
+        if self.crop:
+            cx, cy, cw, ch = self.crop
+            cmd.extend(["-g", f"{cx},{cy} {cw}x{ch}"])
+        cmd.append("-")
+        try:
+            proc = subprocess.run(
+                cmd,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.DEVNULL,
+                check=False,
+            )
+            if proc.returncode == 0 and len(proc.stdout) > 10:
+                return proc.stdout
+        except Exception as e:
+            logger.debug(f"grim capture error: {e}")
+        return self._generate_synthetic_frame()
+
     async def _capture_loop(self):
         """Asynchronous decoupled capture loop."""
         loop = asyncio.get_running_loop()
 
-        if mss:
+        if not (self.is_wayland and self.has_grim) and mss:
             try:
                 self._sct = self._get_mss_instance()
             except Exception as e:
@@ -267,7 +379,12 @@ class ScreenCaptureManager:
         while self._running:
             t_start = time.perf_counter()
             try:
-                if self._sct and mss and Image:
+                if self.is_wayland and self.has_grim:
+                    # Native Wayland capture with cursor and zero-black-frame guarantees
+                    jpeg_bytes = await loop.run_in_executor(
+                        None, self._capture_frame_grim
+                    )
+                elif self._sct and mss and Image:
                     # Determine monitor bounding box
                     mons = self._sct.monitors
                     mon_idx = (
@@ -561,6 +678,7 @@ class CodeFlowCompanionServer:
                 <div class="meta-row"><span>Active Window:</span><b style="max-width: 350px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">{active_win}</b></div>
                 <div class="meta-row"><span>Workspace Directory:</span><b style="max-width: 350px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">{self.workspace_dir}</b></div>
                 <div class="meta-row"><span>Target FPS:</span><b>{self.capture_mgr.target_fps} FPS</b></div>
+                <div class="meta-row"><span>Capture Engine:</span><b>{self.capture_mgr.backend}</b></div>
             </div>
         </div>
 
@@ -607,6 +725,8 @@ class CodeFlowCompanionServer:
                 "os_release": platform.release(),
                 "os_version": platform.version(),
                 "companion_version": VERSION,
+                "capture_backend": self.capture_mgr.backend,
+                "is_wayland": self.capture_mgr.is_wayland,
                 "monitors": monitors,
                 "selected_monitor": self.capture_mgr.monitor_index,
                 "active_window": active_window,

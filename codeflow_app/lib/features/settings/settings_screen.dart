@@ -124,8 +124,9 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
               child: RadioGroup<ThemeMode>(
                 groupValue: themeMode,
                 onChanged: (val) {
-                  if (val != null)
+                  if (val != null) {
                     ref.read(themeModeProvider.notifier).setMode(val);
+                  }
                 },
                 child: Column(
                   children: [
