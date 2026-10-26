@@ -59,6 +59,7 @@ class OrchestratorState {
   final String currentOperation;
   final String? errorMessage;
   final bool canResume;
+  final bool awaitingStep2Confirmation;
 
   const OrchestratorState({
     this.status = WorkflowExecutionStatus.idle,
@@ -71,6 +72,7 @@ class OrchestratorState {
     this.currentOperation = 'Ready',
     this.errorMessage,
     this.canResume = false,
+    this.awaitingStep2Confirmation = false,
   });
 
   OrchestratorState copyWith({
@@ -84,6 +86,7 @@ class OrchestratorState {
     String? currentOperation,
     String? errorMessage,
     bool? canResume,
+    bool? awaitingStep2Confirmation,
   }) {
     return OrchestratorState(
       status: status ?? this.status,
@@ -98,6 +101,8 @@ class OrchestratorState {
       currentOperation: currentOperation ?? this.currentOperation,
       errorMessage: errorMessage ?? this.errorMessage,
       canResume: canResume ?? this.canResume,
+      awaitingStep2Confirmation:
+          awaitingStep2Confirmation ?? this.awaitingStep2Confirmation,
     );
   }
 }
@@ -166,7 +171,6 @@ class OrchestratorController extends ChangeNotifier {
         targetOs.toLowerCase().contains('mac');
     final mode = _storage.automationMode;
     final useDirect = mode == 'directNetwork' && companionAvailable;
-    final isVsCode = mode == 'vscodeEditor';
 
     final steps = <WorkflowStep>[
       WorkflowStep(
@@ -175,33 +179,17 @@ class OrchestratorController extends ChangeNotifier {
             'Verify ${selectedFiles.length} selected files and project integrity',
       ),
       WorkflowStep(
-        title: 'Focus Window Delay',
+        title: 'Step 1: Scaffold Workspace (Direct Host Execution)',
         details:
-            'Countdown ${_storage.focusDelaySeconds}s to focus VS Code workspace on PC',
+            'Direct execution creates all directories and empty files on host disk before automating (no keyboard HID errors)',
       ),
       WorkflowStep(
-        title: isVsCode
-            ? 'Terminal File Creation & Quick Open'
-            : (useDirect ? 'Companion Workspace Sync' : 'Toggle Terminal'),
-        details: isVsCode
-            ? (isMac
-                  ? 'Integrated Terminal creation -> Cmd + P navigate -> Code in Editor'
-                  : 'Integrated Terminal creation -> Ctrl + P navigate -> Code in Editor')
-            : (useDirect
-                  ? 'Direct workspace transfer via companion API'
-                  : (isMac ? 'Shortcut: Cmd + `' : 'Shortcut: Ctrl + `')),
-      ),
-      WorkflowStep(
-        title: isVsCode
-            ? 'Humanized In-Editor Coding'
-            : (useDirect
-                  ? 'Direct Network Transfer'
-                  : 'Terminal Shell Injection'),
-        details: isVsCode
-            ? 'Typing directly into editor buffer at ${_storage.typingSpeedCps} CPS (~${_storage.typingSpeedCps * 12} WPM) with typos, backspaces & syntax pauses'
-            : (useDirect
-                  ? 'Fast direct transfer of ${selectedFiles.length} files to PC workspace'
-                  : 'Shell injection of ${selectedFiles.length} files at ${_storage.typingSpeedCps} CPS'),
+        title: 'Step 2: Humanized In-Editor Coding (VS Code Quick Open)',
+        details: useDirect
+            ? 'Direct file transfer of ${selectedFiles.length} files to PC workspace'
+            : (isMac
+                ? 'Quick Open (Cmd + P) -> Code in Editor with burst typing cadence & cognitive pauses'
+                : 'Quick Open (Ctrl + P) -> Code in Editor with burst typing cadence & cognitive pauses'),
       ),
       WorkflowStep(
         title: 'Save & Post-Run Execution',
@@ -214,7 +202,7 @@ class OrchestratorController extends ChangeNotifier {
     return steps;
   }
 
-  /// Start or resume workflow
+  /// Start Step 1: Pre-create Project Structure (Direct Host Execution)
   Future<void> runWorkflow({
     required Project project,
     bool resumeFromCheckpoint = false,
@@ -232,6 +220,11 @@ class OrchestratorController extends ChangeNotifier {
       return;
     }
 
+    if (resumeFromCheckpoint) {
+      await startStep2Coding(project: project, resumeFromCheckpoint: true);
+      return;
+    }
+
     // 1. Check companion connectivity
     final host = _storage.companionHost;
     final port = _storage.companionPort;
@@ -246,7 +239,124 @@ class OrchestratorController extends ChangeNotifier {
         companionInfo?.os ??
         (defaultTargetPlatform == TargetPlatform.macOS ? 'Darwin' : 'Linux');
 
-    // 2. Load or initialize checkpoint
+    final steps = planWorkflow(
+      project: project,
+      companionAvailable: companionAvailable,
+      targetOs: targetOs,
+    );
+
+    _state = _state.copyWith(
+      status: WorkflowExecutionStatus.inProgress,
+      steps: steps,
+      currentStepIndex: 0,
+      currentFileIndex: 0,
+      totalFiles: selectedFiles.length,
+      currentCharacterOffset: 0,
+      currentOperation: 'Validating project workspace...',
+      errorMessage: null,
+      canResume: false,
+      awaitingStep2Confirmation: false,
+    );
+    notifyListeners();
+
+    try {
+      // Step 0: Validation
+      await _executeStep(0, () async {
+        await Future.delayed(const Duration(milliseconds: 300));
+      });
+      if (_isCancelled) return;
+
+      // Step 1: Pre-create Project Structure (Direct Execution, No HID)
+      await _executeStep(1, () async {
+        _state = _state.copyWith(
+          currentOperation: 'Direct execution: Scaffolding project files...',
+        );
+        notifyListeners();
+
+        final directories = <String>{};
+        final filePaths = <String>[];
+        for (final f in selectedFiles) {
+          filePaths.add(f.relativePath);
+          final parts = f.relativePath.split('/');
+          if (parts.length > 1) {
+            var acc = '';
+            for (int p = 0; p < parts.length - 1; p++) {
+              acc = acc.isEmpty ? parts[p] : '$acc/${parts[p]}';
+              directories.add(acc);
+            }
+          }
+        }
+
+        if (companionAvailable) {
+          final res = await _companionApi.scaffoldWorkspace(
+            host: host,
+            port: port,
+            token: token,
+            directories: directories.toList(),
+            files: filePaths,
+          );
+          if (!res.success) {
+            throw Exception(
+              'Direct workspace scaffolding failed: ${res.errorMessage}',
+            );
+          }
+        }
+        await Future.delayed(const Duration(milliseconds: 250));
+      });
+      if (_isCancelled) return;
+
+      // STEP 1 COMPLETE! Explicitly pause and wait for user to start Step 2!
+      _state = _state.copyWith(
+        status: WorkflowExecutionStatus.paused,
+        awaitingStep2Confirmation: true,
+        currentStepIndex: 1,
+        currentOperation:
+            'Step 1 complete: All directories and files created on PC! Switch to VS Code and tap "Start Coding in VS Code" to begin Step 2.',
+      );
+      notifyListeners();
+    } catch (e) {
+      _state = _state.copyWith(
+        status: WorkflowExecutionStatus.failed,
+        errorMessage: e.toString(),
+        canResume: true,
+      );
+      notifyListeners();
+    }
+  }
+
+  /// User action: Confirm and begin Step 2 (In-Editor Humanized Coding)
+  Future<void> confirmStartStep2({required Project project}) async {
+    await startStep2Coding(project: project, resumeFromCheckpoint: false);
+  }
+
+  /// Execute Step 2: Humanized In-Editor Coding (Quick Open + Cadence Typing)
+  Future<void> startStep2Coding({
+    required Project project,
+    bool resumeFromCheckpoint = false,
+  }) async {
+    _isCancelled = false;
+    final selectedFiles = project.files
+        .where((f) => !f.isDirectory && f.isSelected)
+        .toList();
+    if (selectedFiles.isEmpty) return;
+
+    final host = _storage.companionHost;
+    final port = _storage.companionPort;
+    final token = _storage.companionToken;
+    final companionInfo = await _companionApi.getInfo(
+      host: host,
+      port: port,
+      token: token,
+    );
+    final companionAvailable = companionInfo != null;
+    final targetOs =
+        companionInfo?.os ??
+        (defaultTargetPlatform == TargetPlatform.macOS ? 'Darwin' : 'Linux');
+    final isMac =
+        targetOs.toLowerCase().contains('darwin') ||
+        targetOs.toLowerCase().contains('mac');
+    final mode = _storage.automationMode;
+
     int startFileIndex = 0;
     int startCharOffset = 0;
     List<String> completedFiles = [];
@@ -260,121 +370,52 @@ class OrchestratorController extends ChangeNotifier {
       }
     }
 
-    final steps = planWorkflow(
-      project: project,
-      companionAvailable: companionAvailable,
-      targetOs: targetOs,
-    );
-
     _state = _state.copyWith(
       status: WorkflowExecutionStatus.inProgress,
-      steps: steps,
-      currentStepIndex: 0,
+      awaitingStep2Confirmation: false,
+      currentStepIndex: 2,
       currentFileIndex: startFileIndex,
-      totalFiles: selectedFiles.length,
       currentCharacterOffset: startCharOffset,
-      currentOperation: 'Validating project workspace...',
+      currentOperation: 'Preparing in-editor coding...',
       errorMessage: null,
       canResume: false,
     );
     notifyListeners();
 
     try {
-      // Step 0: Validation
-      await _executeStep(0, () async {
-        await Future.delayed(const Duration(milliseconds: 300));
-      });
-      if (_isCancelled) return;
+      // 1. Focus countdown delay (gives user time to ensure VS Code window is focused)
+      _cadenceEngine.config = _cadenceEngine.config.copyWith(
+        focusDelaySeconds: _storage.focusDelaySeconds,
+        targetCps: _storage.typingSpeedCps,
+        newlinePauseMs: _storage.newlinePauseMs,
+        humanJitterEnabled: _storage.humanJitterEnabled,
+        humanMistakesEnabled: _storage.humanMistakesEnabled,
+        mistakeProbabilityPercent: _storage.mistakeProbabilityPercent,
+        thinkingPausesEnabled: _storage.thinkingPausesEnabled,
+        burstCadenceEnabled: true,
+      );
 
-      // Step 1: Focus Window Countdown
-      await _executeStep(1, () async {
-        _cadenceEngine.config = _cadenceEngine.config.copyWith(
-          focusDelaySeconds: _storage.focusDelaySeconds,
-          targetCps: _storage.typingSpeedCps,
-          newlinePauseMs: _storage.newlinePauseMs,
-          humanJitterEnabled: _storage.humanJitterEnabled,
-          humanMistakesEnabled: _storage.humanMistakesEnabled,
-          mistakeProbabilityPercent: _storage.mistakeProbabilityPercent,
-          thinkingPausesEnabled: _storage.thinkingPausesEnabled,
-        );
-
-        await _cadenceEngine.executeFocusDelay(
-          onTick: (sec) {
-            _state = _state.copyWith(
-              focusCountdownRemaining: sec,
-              currentOperation: sec > 0
-                  ? 'Focus target PC window ($sec s)...'
-                  : 'Starting automation...',
-            );
-            notifyListeners();
-          },
-        );
-      });
-      if (_isCancelled) return;
-
-      // Step 2: Open Terminal / VS Code Workspace Preparation
-      await _executeStep(2, () async {
-        final isMac =
-            targetOs.toLowerCase().contains('darwin') ||
-            targetOs.toLowerCase().contains('mac');
-        final mode = _storage.automationMode;
-
-        if (mode == 'vscodeEditor') {
+      await _cadenceEngine.executeFocusDelay(
+        onTick: (sec) {
           _state = _state.copyWith(
-            currentOperation: 'Checking VS Code integrated terminal...',
+            focusCountdownRemaining: sec,
+            currentOperation: sec > 0
+                ? 'Focus target PC window ($sec s)...'
+                : 'Starting in-editor coding...',
           );
           notifyListeners();
-
-          // Check if terminal is open via bottom OCR
-          bool terminalOpen = false;
-          if (companionAvailable) {
-            final ocr = await _companionApi.getScreenOcr(
-              host: host,
-              port: port,
-              token: token,
-              region: 'bottom',
-            );
-            terminalOpen = ocr != null && ocr.isTerminalOpen;
-          }
-
-          // Open terminal if not already open: Ctrl + ` (or Cmd + ` on macOS)
-          if (!terminalOpen) {
-            await _hidService.sendKeyChord(
-              hidCode: HidScancodes.graveAccentTilde,
-              ctrl: !isMac,
-              meta: isMac,
-            );
-            await Future.delayed(const Duration(milliseconds: 350));
-          }
-        } else if (mode == 'hidTerminalShell') {
-          // Open terminal Ctrl + ~ (or Cmd + ~ on Mac)
-          await _hidService.sendKeyChord(
-            hidCode: HidScancodes.graveAccentTilde,
-            ctrl: !isMac,
-            meta: isMac,
-          );
-          await Future.delayed(const Duration(milliseconds: 400));
-        } else {
-          await Future.delayed(const Duration(milliseconds: 200));
-        }
-      });
+        },
+      );
       if (_isCancelled) return;
 
-      // Step 3: File Coding / Transfer
-      await _executeStep(3, () async {
-        final isMac =
-            targetOs.toLowerCase().contains('darwin') ||
-            targetOs.toLowerCase().contains('mac');
-        final isWindows = targetOs.toLowerCase().contains('windows');
-        final mode = _storage.automationMode;
-
+      // 2. Step 2 execution: In-Editor Humanized Coding
+      await _executeStep(2, () async {
         for (int i = startFileIndex; i < selectedFiles.length; i++) {
           if (_isCancelled) break;
           final file = selectedFiles[i];
           final content = file.content ?? '';
 
           if (mode == 'directNetwork' && companionAvailable) {
-            // Direct network transfer to workspace
             _state = _state.copyWith(
               currentFileIndex: i,
               currentOperation: 'Direct transfer: ${file.relativePath}...',
@@ -393,173 +434,27 @@ class OrchestratorController extends ChangeNotifier {
                 'Direct transfer failed for ${file.relativePath}: ${result.errorMessage}',
               );
             }
-          } else if (mode == 'hidTerminalShell') {
-            // Real Human Bluetooth HID Keystroke Typing via terminal
-            _state = _state.copyWith(
-              currentFileIndex: i,
-              currentOperation: 'Shell injection: ${file.relativePath}...',
-            );
-            notifyListeners();
-
-            final dir = file.relativePath.contains('/')
-                ? file.relativePath.substring(
-                    0,
-                    file.relativePath.lastIndexOf('/'),
-                  )
-                : '';
-
-            // 1. Prepare directory in terminal if nested
-            if (dir.isNotEmpty && startCharOffset == 0) {
-              final mkdirCmd = isWindows
-                  ? 'mkdir -Force "$dir"\n'
-                  : 'mkdir -p "$dir"\n';
-              for (final ch in mkdirCmd.split('')) {
-                await _hidService.typeCharacter(ch);
-                await Future.delayed(const Duration(milliseconds: 15));
-              }
-              await Future.delayed(const Duration(milliseconds: 200));
-            }
-
-            // 2. Prepare file injection command in shell
-            if (startCharOffset == 0) {
-              final headerCmd = isWindows
-                  ? 'powershell -Command "Set-Content -Path \'${file.relativePath}\' -Value @\'\n'
-                  : 'cat << \'CODEFLOW_EOF\' > "${file.relativePath}"\n';
-              for (final ch in headerCmd.split('')) {
-                await _hidService.typeCharacter(ch);
-                await Future.delayed(const Duration(milliseconds: 14));
-              }
-              await Future.delayed(const Duration(milliseconds: 150));
-            }
-
-            // 3. Humanized cadence typing of file contents
-            final charsTyped = await _cadenceEngine.typeContent(
-              content: content,
-              fileName: file.relativePath,
-              fileIndex: i,
-              totalFiles: selectedFiles.length,
-              startOffset: (i == startFileIndex) ? startCharOffset : 0,
-            );
-
-            // 4. Close heredoc in terminal
-            if (!_isCancelled) {
-              final footerCmd = isWindows ? '\n\'@"\n' : '\nCODEFLOW_EOF\n';
-              for (final ch in footerCmd.split('')) {
-                await _hidService.typeCharacter(ch);
-                await Future.delayed(const Duration(milliseconds: 14));
-              }
-              await Future.delayed(const Duration(milliseconds: 300));
-            }
-
-            if (_isCancelled) {
-              await _storage.saveCheckpoint(
-                WorkflowCheckpoint(
-                  projectId: project.id,
-                  currentFileIndex: i,
-                  charOffset: charsTyped,
-                  status: WorkflowExecutionStatus.paused,
-                  completedRelativePaths: completedFiles,
-                  lastUpdated: DateTime.now(),
-                ),
-              );
-              return;
-            }
           } else {
             // REAL DEVELOPER VS CODE IN-EDITOR TYPING (DEFAULT)
             _state = _state.copyWith(
               currentFileIndex: i,
-              currentOperation:
-                  'Opening ${file.relativePath} in VS Code (Ctrl+P)...',
+              currentOperation: 'Quick Open: ${file.relativePath} (Ctrl+P)...',
             );
             notifyListeners();
 
-            // 1. Ensure VS Code Integrated Terminal is open and focused
-            _state = _state.copyWith(
-              currentFileIndex: i,
-              currentOperation: 'Terminal: Focusing for ${file.relativePath}...',
-            );
-            notifyListeners();
-
-            bool terminalActive = false;
-            if (companionAvailable) {
-              final bottomOcr = await _companionApi.getScreenOcr(
-                host: host,
-                port: port,
-                token: token,
-                region: 'bottom',
-              );
-              terminalActive = bottomOcr != null && bottomOcr.isTerminalOpen;
-            }
-
-            // If terminal is not open, open it: Ctrl + ` (Cmd + ` on macOS)
-            if (!terminalActive) {
-              await _hidService.sendKeyChord(
-                hidCode: HidScancodes.graveAccentTilde,
-                ctrl: !isMac,
-                meta: isMac,
-              );
-              await Future.delayed(const Duration(milliseconds: 350));
-            }
-
-            // 2. Progressive file creation in terminal using humanized command typing
-            _state = _state.copyWith(
-              currentOperation:
-                  'Terminal: Creating ${file.relativePath}...',
-            );
-            notifyListeners();
-
-            final dir = file.relativePath.contains('/')
-                ? file.relativePath.substring(
-                    0,
-                    file.relativePath.lastIndexOf('/'),
-                  )
-                : '';
-
-            final touchCmd = isWindows
-                ? '${dir.isNotEmpty ? 'mkdir -Force "$dir"; ' : ''}New-Item -ItemType File -Force -Path "${file.relativePath}"\n'
-                : '${dir.isNotEmpty ? 'mkdir -p "$dir" && ' : ''}touch "${file.relativePath}"\n';
-
-            for (final ch in touchCmd.split('')) {
-              if (_isCancelled) break;
-              await _hidService.typeCharacter(ch);
-              await Future.delayed(const Duration(milliseconds: 14));
-            }
-            if (_isCancelled) break;
-            await Future.delayed(const Duration(milliseconds: 250));
-
-            // Also ensure companion disk sync if online (fail-safe for immediate indexing)
-            if (companionAvailable) {
-              try {
-                await _fileTransferService.transferFile(
-                  host: host,
-                  port: port,
-                  token: token,
-                  file: file,
-                  fileContent: '',
-                  overwrite: false,
-                );
-              } catch (_) {}
-            }
-
-            // 3. Navigate to file in VS Code editor using Quick Open (Ctrl+P / Cmd+P)
-            _state = _state.copyWith(
-              currentOperation:
-                  'Navigating to ${file.relativePath} (Ctrl+P)...',
-            );
-            notifyListeners();
-
+            // Quick Open (Ctrl+P / Cmd+P)
             await _hidService.sendKeyChord(
               hidCode: HidScancodes.keyP,
               ctrl: !isMac,
               meta: isMac,
             );
-            await Future.delayed(const Duration(milliseconds: 350));
+            await Future.delayed(const Duration(milliseconds: 320));
 
             // Type the relative path into Quick Open
             for (final ch in file.relativePath.split('')) {
               if (_isCancelled) break;
               await _hidService.typeCharacter(ch);
-              await Future.delayed(const Duration(milliseconds: 16));
+              await Future.delayed(const Duration(milliseconds: 15));
             }
             if (_isCancelled) break;
 
@@ -568,14 +463,8 @@ class OrchestratorController extends ChangeNotifier {
             await _hidService.sendKeyPress(HidScancodes.enter);
             await Future.delayed(const Duration(milliseconds: 550));
 
-            // 4. Screen OCR Verification of active editor tab
+            // Screen OCR verification if companion available
             if (companionAvailable && !_isCancelled) {
-              _state = _state.copyWith(
-                currentOperation:
-                    'OCR verifying editor tab: ${file.name}...',
-              );
-              notifyListeners();
-
               bool ocrConfirmed = false;
               for (int attempt = 0; attempt < 3; attempt++) {
                 if (_isCancelled) break;
@@ -588,18 +477,13 @@ class OrchestratorController extends ChangeNotifier {
                 );
                 if (ocr != null && ocr.queryFound) {
                   ocrConfirmed = true;
-                  _state = _state.copyWith(
-                    currentOperation:
-                        'OCR confirmed editor tab open: ${file.name}',
-                  );
-                  notifyListeners();
                   break;
                 }
-                await Future.delayed(const Duration(milliseconds: 350));
+                await Future.delayed(const Duration(milliseconds: 300));
               }
 
-              // Fallback if Quick Open didn't switch tab on first Enter
               if (!ocrConfirmed && !_isCancelled) {
+                // Retry Quick Open with basename
                 await _hidService.sendKeyChord(
                   hidCode: HidScancodes.keyP,
                   ctrl: !isMac,
@@ -617,24 +501,21 @@ class OrchestratorController extends ChangeNotifier {
               }
             }
 
-            // 5. Clear existing editor buffer if starting from offset 0
+            // Clear existing buffer if starting from offset 0
             if (startCharOffset == 0 && !_isCancelled) {
-              // Select all (Ctrl+A / Cmd+A)
               await _hidService.sendKeyChord(
                 hidCode: HidScancodes.keyA,
                 ctrl: !isMac,
                 meta: isMac,
               );
               await Future.delayed(const Duration(milliseconds: 140));
-
-              // Backspace to clear buffer
               await _hidService.sendKeyPress(HidScancodes.backspace);
               await Future.delayed(const Duration(milliseconds: 200));
             }
 
-            // 4. Humanized in-editor typing
+            // Humanized in-editor burst-pause cadence typing
             _state = _state.copyWith(
-              currentOperation: 'Coding in editor: ${file.relativePath}...',
+              currentOperation: 'Human coding: ${file.relativePath}...',
             );
             notifyListeners();
 
@@ -660,7 +541,7 @@ class OrchestratorController extends ChangeNotifier {
               return;
             }
 
-            // 5. Save the file buffer in VS Code (Ctrl+S / Cmd+S)
+            // Save file buffer in VS Code (Ctrl+S / Cmd+S)
             _state = _state.copyWith(
               currentOperation: 'Saving ${file.relativePath} (Ctrl+S)...',
             );
@@ -671,11 +552,10 @@ class OrchestratorController extends ChangeNotifier {
               ctrl: !isMac,
               meta: isMac,
             );
-            await Future.delayed(const Duration(milliseconds: 400));
+            await Future.delayed(const Duration(milliseconds: 350));
           }
 
           completedFiles.add(file.relativePath);
-          // Persist progress checkpoint
           await _storage.saveCheckpoint(
             WorkflowCheckpoint(
               projectId: project.id,
@@ -690,20 +570,18 @@ class OrchestratorController extends ChangeNotifier {
       });
       if (_isCancelled) return;
 
-      // Step 4: Verification, Save & Post-Run Command
-      await _executeStep(4, () async {
+      // Step 3: Verification, Save & Post-Run Command
+      await _executeStep(3, () async {
         final isMac =
             targetOs.toLowerCase().contains('darwin') ||
             targetOs.toLowerCase().contains('mac');
-        // Trigger Ctrl + S to ensure active editor is saved
         await _hidService.sendKeyChord(
           hidCode: HidScancodes.keyS,
           ctrl: !isMac,
           meta: isMac,
         );
-        await Future.delayed(const Duration(milliseconds: 350));
+        await Future.delayed(const Duration(milliseconds: 300));
 
-        // If post-run command is configured, type and execute it in terminal
         final postCmd = _storage.postRunCommand;
         if (postCmd.isNotEmpty) {
           _state = _state.copyWith(
@@ -711,7 +589,6 @@ class OrchestratorController extends ChangeNotifier {
           );
           notifyListeners();
 
-          // Open terminal (Ctrl+~ / Cmd+~)
           await _hidService.sendKeyChord(
             hidCode: HidScancodes.graveAccentTilde,
             ctrl: !isMac,
@@ -727,9 +604,7 @@ class OrchestratorController extends ChangeNotifier {
         }
       });
 
-      // Clear checkpoint on successful completion
       await _storage.deleteCheckpoint(project.id);
-
       _state = _state.copyWith(
         status: WorkflowExecutionStatus.completed,
         currentOperation: 'Workflow completed successfully.',

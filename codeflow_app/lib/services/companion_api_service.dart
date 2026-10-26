@@ -175,7 +175,85 @@ class CompanionApiService {
     }
   }
 
+  /// Pre-create workspace directory structure and empty files directly on host disk
+  Future<ScaffoldResult> scaffoldWorkspace({
+    required String host,
+    required int port,
+    String? token,
+    List<String> directories = const [],
+    List<String> files = const [],
+    Duration timeout = const Duration(seconds: 12),
+  }) async {
+    try {
+      final uri = Uri.parse('http://$host:$port/workspace/scaffold');
+      final headers = _buildHeaders(token)
+        ..['Content-Type'] = 'application/json';
+      final body = jsonEncode({
+        'directories': directories,
+        'files': files,
+      });
+      final resp = await _client
+          .post(uri, headers: headers, body: body)
+          .timeout(timeout);
+      if (resp.statusCode == 200) {
+        final data = jsonDecode(resp.body) as Map<String, dynamic>;
+        return ScaffoldResult(
+          success: true,
+          directoriesCreated: data['directories_created'] as int? ?? 0,
+          filesCreated: data['files_created'] as int? ?? 0,
+        );
+      }
+      final err =
+          jsonDecode(resp.body)['error'] ?? 'Scaffold failed (${resp.statusCode})';
+      return ScaffoldResult(success: false, errorMessage: err.toString());
+    } catch (e) {
+      debugPrint('CompanionApiService scaffoldWorkspace error: $e');
+      return ScaffoldResult(success: false, errorMessage: e.toString());
+    }
+  }
+
+  /// Execute command directly in host workspace
+  Future<Map<String, dynamic>?> executeCommand({
+    required String host,
+    required int port,
+    String? token,
+    required String command,
+    Duration timeout = const Duration(seconds: 30),
+  }) async {
+    try {
+      final uri = Uri.parse('http://$host:$port/workspace/execute');
+      final headers = _buildHeaders(token)
+        ..['Content-Type'] = 'application/json';
+      final resp = await _client
+          .post(uri, headers: headers, body: jsonEncode({'command': command}))
+          .timeout(timeout);
+      if (resp.statusCode == 200) {
+        return jsonDecode(resp.body) as Map<String, dynamic>;
+      }
+      return null;
+    } catch (e) {
+      debugPrint('CompanionApiService executeCommand error: $e');
+      return null;
+    }
+  }
+
   void dispose() {
     _client.close();
   }
+}
+
+/// Result of workspace scaffolding
+@immutable
+class ScaffoldResult {
+  final bool success;
+  final int directoriesCreated;
+  final int filesCreated;
+  final String? errorMessage;
+
+  const ScaffoldResult({
+    required this.success,
+    this.directoriesCreated = 0,
+    this.filesCreated = 0,
+    this.errorMessage,
+  });
 }

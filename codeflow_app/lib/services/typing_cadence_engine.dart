@@ -38,6 +38,7 @@ class CadenceConfig {
   final bool humanMistakesEnabled; // Randomized typos & backspace corrections
   final int mistakeProbabilityPercent; // 1 - 10 percent chance of mistake
   final bool thinkingPausesEnabled; // Syntax and thought pauses
+  final bool burstCadenceEnabled; // Motor-chunk burst typing with cognitive pauses
   final bool deterministicTestMode; // Fixed exact intervals for testing
 
   const CadenceConfig({
@@ -48,6 +49,7 @@ class CadenceConfig {
     this.humanMistakesEnabled = true,
     this.mistakeProbabilityPercent = 3,
     this.thinkingPausesEnabled = true,
+    this.burstCadenceEnabled = true,
     this.deterministicTestMode = false,
   });
 
@@ -59,6 +61,7 @@ class CadenceConfig {
     bool? humanMistakesEnabled,
     int? mistakeProbabilityPercent,
     bool? thinkingPausesEnabled,
+    bool? burstCadenceEnabled,
     bool? deterministicTestMode,
   }) {
     return CadenceConfig(
@@ -71,6 +74,7 @@ class CadenceConfig {
           mistakeProbabilityPercent ?? this.mistakeProbabilityPercent,
       thinkingPausesEnabled:
           thinkingPausesEnabled ?? this.thinkingPausesEnabled,
+      burstCadenceEnabled: burstCadenceEnabled ?? this.burstCadenceEnabled,
       deterministicTestMode:
           deterministicTestMode ?? this.deterministicTestMode,
     );
@@ -144,7 +148,37 @@ class TypingCadenceEngine {
     '0': ['9', '-', 'p'],
   };
 
-  /// Calculate delay between keystrokes with Box-Muller Gaussian jitter
+  /// Random burst length: 3-5 chars (e.g. 4 letters fast), 6-9 chars (full word fast), or 10-14 chars (2-3 words fast)
+  int _pickNextBurstLength() {
+    final roll = _random.nextInt(100);
+    if (roll < 45) {
+      // 3 to 5 characters (e.g. 4 letters fast)
+      return 3 + _random.nextInt(3);
+    } else if (roll < 80) {
+      // 6 to 9 characters (full word fast)
+      return 6 + _random.nextInt(4);
+    } else {
+      // 10 to 14 characters (2-3 words fast flow)
+      return 10 + _random.nextInt(5);
+    }
+  }
+
+  /// Intra-burst fast keystroke delay (14 - 26 CPS)
+  double _calculateIntraBurstDelayMs() {
+    final burstCps = (config.targetCps * 2.8).clamp(14, 28);
+    final baseMs = 1000.0 / burstCps;
+    if (config.deterministicTestMode || !config.humanJitterEnabled) {
+      return baseMs;
+    }
+    // Subtle human Gaussian jitter
+    final u1 = max(1e-7, _random.nextDouble());
+    final u2 = _random.nextDouble();
+    final z0 = sqrt(-2.0 * log(u1)) * cos(2.0 * pi * u2);
+    final jitter = (z0 * baseMs * 0.18).clamp(-baseMs * 0.35, baseMs * 0.35);
+    return max(20.0, baseMs + jitter);
+  }
+
+  /// Calculate delay between keystrokes with Box-Muller Gaussian jitter (linear fallback)
   double _calculateNextDelayMs() {
     final baseIntervalMs = 1000.0 / config.targetCps.clamp(2, 60);
     if (config.deterministicTestMode || !config.humanJitterEnabled) {
@@ -225,6 +259,8 @@ class TypingCadenceEngine {
 
     int currentOffset = startOffset.clamp(0, content.length);
     final totalChars = content.length;
+    int burstRemaining = _pickNextBurstLength();
+    int charsSinceThoughtPause = 0;
 
     try {
       while (currentOffset < totalChars) {
@@ -314,6 +350,8 @@ class TypingCadenceEngine {
         await _hidService.typeCharacter(char);
 
         currentOffset++;
+        charsSinceThoughtPause++;
+        burstRemaining--;
 
         // Emit progress periodically
         if (currentOffset % 5 == 0 || currentOffset == totalChars) {
@@ -331,29 +369,92 @@ class TypingCadenceEngine {
         }
 
         // 3. Cadence and human thinking pauses
-        if (char == '\n') {
-          final pauseMs = config.deterministicTestMode
-              ? config.newlinePauseMs
-              : (config.newlinePauseMs + (_random.nextInt(140) - 50)).clamp(
+        if (config.deterministicTestMode) {
+          if (char == '\n') {
+            await Future.delayed(
+              Duration(milliseconds: config.newlinePauseMs),
+            );
+          } else {
+            final delayMs = _calculateNextDelayMs();
+            await Future.delayed(Duration(milliseconds: delayMs.round()));
+          }
+        } else if (!config.burstCadenceEnabled) {
+          // Fallback classic cadence
+          if (char == '\n') {
+            final pauseMs =
+                (config.newlinePauseMs + (_random.nextInt(140) - 50)).clamp(
                   80,
                   800,
                 );
-          await Future.delayed(Duration(milliseconds: pauseMs));
-        } else {
-          // Check for syntax boundaries (; { } ))
-          if (!config.deterministicTestMode && config.thinkingPausesEnabled) {
-            if (char == ';' || char == '{' || char == '}' || char == ')') {
-              final syntaxPause = 140 + _random.nextInt(220);
-              await Future.delayed(Duration(milliseconds: syntaxPause));
-            } else if (_random.nextInt(1000) < 15) {
-              // 1.5% chance developer "thought pause" (reading/thinking)
-              final thoughtPause = 600 + _random.nextInt(700);
-              await Future.delayed(Duration(milliseconds: thoughtPause));
+            await Future.delayed(Duration(milliseconds: pauseMs));
+          } else {
+            if (config.thinkingPausesEnabled) {
+              if (char == ';' || char == '{' || char == '}' || char == ')') {
+                final syntaxPause = 140 + _random.nextInt(220);
+                await Future.delayed(Duration(milliseconds: syntaxPause));
+              } else if (_random.nextInt(1000) < 15) {
+                final thoughtPause = 600 + _random.nextInt(700);
+                await Future.delayed(Duration(milliseconds: thoughtPause));
+              }
             }
+            final delayMs = _calculateNextDelayMs();
+            await Future.delayed(Duration(milliseconds: delayMs.round()));
           }
-
-          final delayMs = _calculateNextDelayMs();
-          await Future.delayed(Duration(milliseconds: delayMs.round()));
+        } else {
+          // HYPER-REALISTIC HUMAN BURST & COGNITIVE PAUSE CADENCE
+          if (char == '\n') {
+            // Line break inspection pause
+            final pauseMs =
+                (config.newlinePauseMs + (_random.nextInt(180) - 40)).clamp(
+                  120,
+                  900,
+                );
+            await Future.delayed(Duration(milliseconds: pauseMs));
+            burstRemaining = _pickNextBurstLength();
+          } else if (char == ' ') {
+            // Word boundary: check for deep thought pause or word glance hesitation
+            if (config.thinkingPausesEnabled &&
+                ((charsSinceThoughtPause > 40 && _random.nextDouble() < 0.22) ||
+                    _random.nextDouble() < 0.025)) {
+              // Deep developer cognitive pause ("thinking about next variable/method")
+              charsSinceThoughtPause = 0;
+              final thoughtMs = 850 + _random.nextInt(1300);
+              await Future.delayed(Duration(milliseconds: thoughtMs));
+              burstRemaining = _pickNextBurstLength();
+            } else if (burstRemaining <= 0 || _random.nextDouble() < 0.35) {
+              // Inter-word glance / cognitive retrieval pause (140ms - 380ms)
+              final interWordMs = 130 + _random.nextInt(250);
+              await Future.delayed(Duration(milliseconds: interWordMs));
+              burstRemaining = _pickNextBurstLength();
+            } else {
+              // Intra-burst space (rapid 2-3 word flow)
+              final intraMs = _calculateIntraBurstDelayMs();
+              await Future.delayed(Duration(milliseconds: intraMs.round()));
+            }
+          } else if (char == ';' ||
+              char == '{' ||
+              char == '}' ||
+              char == ')' ||
+              char == ']') {
+            // Syntax processing pause
+            if (config.thinkingPausesEnabled) {
+              final syntaxMs = 180 + _random.nextInt(260);
+              await Future.delayed(Duration(milliseconds: syntaxMs));
+            } else {
+              final intraMs = _calculateIntraBurstDelayMs();
+              await Future.delayed(Duration(milliseconds: intraMs.round()));
+            }
+            burstRemaining = _pickNextBurstLength();
+          } else if (burstRemaining <= 0) {
+            // End of fast burst reached (e.g. after 4 letters or word): pause to glance/think
+            final chunkPauseMs = 150 + _random.nextInt(280);
+            await Future.delayed(Duration(milliseconds: chunkPauseMs));
+            burstRemaining = _pickNextBurstLength();
+          } else {
+            // Fast intra-burst keystroke (motor clatter, 14 - 26 CPS)
+            final intraMs = _calculateIntraBurstDelayMs();
+            await Future.delayed(Duration(milliseconds: intraMs.round()));
+          }
         }
       }
     } finally {

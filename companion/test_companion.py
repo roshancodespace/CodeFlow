@@ -188,6 +188,63 @@ class TestCodeFlowCompanion(unittest.IsolatedAsyncioTestCase):
             if os.path.exists(new_ws):
                 shutil.rmtree(new_ws, ignore_errors=True)
 
+    async def test_workspace_scaffold_endpoint(self):
+        headers = {"Authorization": f"Bearer {self.token}"}
+        payload = {
+            "directories": ["lib/screens", "lib/models", "lib/widgets"],
+            "files": [
+                {"relative_path": "lib/main.dart", "content": "void main() {}"},
+                {"relative_path": "lib/screens/home.dart", "content": ""},
+                "lib/models/user.dart",
+            ],
+        }
+        async with ClientSession() as session:
+            async with session.post(
+                f"http://127.0.0.1:{self.port}/workspace/scaffold",
+                json=payload,
+                headers=headers,
+            ) as resp:
+                self.assertEqual(resp.status, 200)
+                data = await resp.json()
+                self.assertEqual(data["status"], "success")
+                self.assertTrue(data["directories_created"] >= 3)
+                self.assertEqual(data["files_created"], 3)
+
+        # Verify files and directories exist in workspace
+        self.assertTrue(os.path.isdir(os.path.join(self.temp_workspace, "lib", "screens")))
+        self.assertTrue(os.path.isfile(os.path.join(self.temp_workspace, "lib", "main.dart")))
+        self.assertTrue(os.path.isfile(os.path.join(self.temp_workspace, "lib", "screens", "home.dart")))
+        self.assertTrue(os.path.isfile(os.path.join(self.temp_workspace, "lib", "models", "user.dart")))
+
+    async def test_workspace_scaffold_path_traversal_protection(self):
+        headers = {"Authorization": f"Bearer {self.token}"}
+        payload = {
+            "directories": ["../../etc"],
+            "files": ["../../../escaped.txt"],
+        }
+        async with ClientSession() as session:
+            async with session.post(
+                f"http://127.0.0.1:{self.port}/workspace/scaffold",
+                json=payload,
+                headers=headers,
+            ) as resp:
+                self.assertEqual(resp.status, 403)
+
+    async def test_workspace_execute_endpoint(self):
+        headers = {"Authorization": f"Bearer {self.token}"}
+        payload = {"command": "echo 'CodeFlow Direct Setup'"}
+        async with ClientSession() as session:
+            async with session.post(
+                f"http://127.0.0.1:{self.port}/workspace/execute",
+                json=payload,
+                headers=headers,
+            ) as resp:
+                self.assertEqual(resp.status, 200)
+                data = await resp.json()
+                self.assertEqual(data["status"], "success")
+                self.assertEqual(data["returncode"], 0)
+                self.assertIn("CodeFlow Direct Setup", data["stdout"])
+
 
 if __name__ == "__main__":
     unittest.main()

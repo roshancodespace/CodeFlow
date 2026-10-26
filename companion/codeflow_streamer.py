@@ -82,7 +82,7 @@ logging.basicConfig(
 )
 logger = logging.getLogger("CodeFlowCompanion")
 
-VERSION = "1.0.0"
+VERSION = "1.0.8"
 
 
 class ActiveWindowDetector:
@@ -667,6 +667,8 @@ class CodeFlowCompanionServer:
         self.app.router.add_get("/stream", self.handle_stream)
         self.app.router.add_get("/screenshot", self.handle_screenshot)
         self.app.router.add_post("/workspace/transfer", self.handle_workspace_transfer)
+        self.app.router.add_post("/workspace/scaffold", self.handle_workspace_scaffold)
+        self.app.router.add_post("/workspace/execute", self.handle_workspace_execute)
 
     async def handle_dashboard(self, request: web.Request) -> web.Response:
         """User-friendly host dashboard."""
@@ -915,6 +917,8 @@ class CodeFlowCompanionServer:
                     "mjpeg_stream": True,
                     "screenshot": True,
                     "workspace_transfer": True,
+                    "workspace_scaffold": True,
+                    "workspace_execute": True,
                     "active_window_detection": bool(active_window is not None),
                     "ocr": bool(shutil.which("tesseract")),
                 },
@@ -1299,6 +1303,148 @@ class CodeFlowCompanionServer:
                 "verified": True,
             }
         )
+
+    async def handle_workspace_scaffold(self, request: web.Request) -> web.Response:
+        """
+        Pre-create workspace directory structure and empty files directly on host disk.
+        Eliminates shell escaping errors, terminal focus loss, and slow keyboard HID command typing.
+        Validates all paths against authorized workspace directory to prevent traversal.
+        """
+        try:
+            data = await request.json()
+        except Exception:
+            return web.json_response({"error": "Invalid JSON body"}, status=400)
+
+        directories = data.get("directories", [])
+        files = data.get("files", [])
+
+        if not isinstance(directories, list) or not isinstance(files, list):
+            return web.json_response(
+                {"error": "'directories' and 'files' must be lists."}, status=400
+            )
+
+        dirs_created = 0
+        files_created = 0
+
+        # 1. Pre-create directories
+        for rel_dir in directories:
+            if not isinstance(rel_dir, str) or not rel_dir.strip():
+                continue
+            norm_rel = os.path.normpath(rel_dir).lstrip("/\\")
+            if (
+                norm_rel.startswith("..")
+                or ".." in norm_rel.split(os.sep)
+                or os.path.isabs(norm_rel)
+            ):
+                return web.json_response(
+                    {"error": f"Path traversal attempt rejected: {rel_dir}"},
+                    status=403,
+                )
+            target_dir = os.path.abspath(os.path.join(self.workspace_dir, norm_rel))
+            if not target_dir.startswith(self.workspace_dir):
+                return web.json_response(
+                    {"error": f"Target directory escapes workspace: {rel_dir}"},
+                    status=403,
+                )
+            if not os.path.exists(target_dir):
+                os.makedirs(target_dir, exist_ok=True)
+                dirs_created += 1
+
+        # 2. Pre-create empty files (touch or initialize)
+        for item in files:
+            if isinstance(item, str):
+                rel_path = item
+                initial_content = ""
+            elif isinstance(item, dict):
+                rel_path = item.get("relative_path")
+                initial_content = item.get("content", "")
+            else:
+                continue
+
+            if not rel_path or not isinstance(rel_path, str):
+                continue
+
+            norm_rel = os.path.normpath(rel_path).lstrip("/\\")
+            if (
+                norm_rel.startswith("..")
+                or ".." in norm_rel.split(os.sep)
+                or os.path.isabs(norm_rel)
+            ):
+                return web.json_response(
+                    {"error": f"Path traversal attempt rejected: {rel_path}"},
+                    status=403,
+                )
+            target_file = os.path.abspath(os.path.join(self.workspace_dir, norm_rel))
+            if not target_file.startswith(self.workspace_dir):
+                return web.json_response(
+                    {"error": f"Target file escapes workspace: {rel_path}"},
+                    status=403,
+                )
+
+            parent_dir = os.path.dirname(target_file)
+            if not os.path.exists(parent_dir):
+                os.makedirs(parent_dir, exist_ok=True)
+                dirs_created += 1
+
+            if not os.path.exists(target_file):
+                with open(target_file, "w", encoding="utf-8") as f:
+                    f.write(initial_content)
+                files_created += 1
+
+        logger.info(
+            f"Workspace scaffolded: {dirs_created} directories, {files_created} files created in {self.workspace_dir}"
+        )
+        return web.json_response(
+            {
+                "status": "success",
+                "workspace_dir": self.workspace_dir,
+                "directories_created": dirs_created,
+                "files_created": files_created,
+            }
+        )
+
+    async def handle_workspace_execute(self, request: web.Request) -> web.Response:
+        """
+        Execute command directly in the authorized workspace on host.
+        Enables instant, direct setup commands without keyboard HID.
+        """
+        try:
+            data = await request.json()
+        except Exception:
+            return web.json_response({"error": "Invalid JSON body"}, status=400)
+
+        cmd = data.get("command")
+        if not cmd or not isinstance(cmd, str):
+            return web.json_response(
+                {"error": "Missing 'command' parameter in request."}, status=400
+            )
+
+        try:
+            proc = await asyncio.create_subprocess_shell(
+                cmd,
+                cwd=self.workspace_dir,
+                stdout=asyncio.subprocess.PIPE,
+                stderr=asyncio.subprocess.PIPE,
+            )
+            stdout, stderr = await asyncio.wait_for(
+                proc.communicate(), timeout=30.0
+            )
+            return web.json_response(
+                {
+                    "status": "success",
+                    "returncode": proc.returncode,
+                    "stdout": stdout.decode("utf-8", errors="replace"),
+                    "stderr": stderr.decode("utf-8", errors="replace"),
+                }
+            )
+        except asyncio.TimeoutError:
+            return web.json_response(
+                {"error": "Command timed out after 30 seconds."}, status=504
+            )
+        except Exception as e:
+            return web.json_response(
+                {"error": f"Command execution failed: {e}"}, status=500
+            )
 
     def _get_local_ip(self) -> str:
         """Get the primary local LAN IP address."""

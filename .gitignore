@@ -36,3 +36,4 @@ release_apk/
 *.swp
 *.swo
 .DS_Store
+config/

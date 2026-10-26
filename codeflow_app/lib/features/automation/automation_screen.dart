@@ -225,6 +225,73 @@ class _AutomationScreenState extends ConsumerState<AutomationScreen> {
                       ),
                     ),
 
+                  // Step 1 Completed Banner & Start Step 2 Action
+                  if (orchState.awaitingStep2Confirmation)
+                    Container(
+                      margin: const EdgeInsets.only(bottom: 16),
+                      padding: const EdgeInsets.all(14),
+                      decoration: BoxDecoration(
+                        color: AppColors.statusSuccess.withAlpha(25),
+                        border: Border.all(
+                          color: AppColors.statusSuccess.withAlpha(120),
+                        ),
+                        borderRadius: BorderRadius.circular(8),
+                      ),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          const Row(
+                            children: [
+                              Icon(
+                                Icons.check_circle,
+                                color: AppColors.statusSuccess,
+                                size: 20,
+                              ),
+                              SizedBox(width: 8),
+                              Text(
+                                'Step 1 Complete: Project Scaffolded',
+                                style: TextStyle(
+                                  fontSize: 14,
+                                  fontWeight: FontWeight.w700,
+                                  color: AppColors.statusSuccess,
+                                ),
+                              ),
+                            ],
+                          ),
+                          const SizedBox(height: 6),
+                          const Text(
+                            'All folder structures and files were created directly on the host PC disk without keyboard typing errors. Switch to VS Code on your PC and tap below to start Step 2.',
+                            style: TextStyle(fontSize: 12),
+                          ),
+                          const SizedBox(height: 12),
+                          SizedBox(
+                            width: double.infinity,
+                            child: FilledButton.icon(
+                              style: FilledButton.styleFrom(
+                                backgroundColor: AppColors.accentLight,
+                                padding: const EdgeInsets.symmetric(
+                                  vertical: 12,
+                                ),
+                              ),
+                              icon: const Icon(Icons.code_rounded, size: 20),
+                              label: const Text(
+                                'Focus VS Code & Start Step 2: Code in Editor',
+                                style: TextStyle(
+                                  fontWeight: FontWeight.w700,
+                                  fontSize: 13,
+                                ),
+                              ),
+                              onPressed: () {
+                                orchestrator.confirmStartStep2(
+                                  project: selectedProject,
+                                );
+                              },
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+
                   // Execution Status & Progress Box
                   Container(
                     padding: const EdgeInsets.all(14),
@@ -296,12 +363,39 @@ class _AutomationScreenState extends ConsumerState<AutomationScreen> {
                   // Execution Controls
                   Row(
                     children: [
-                      if (orchState.status !=
-                          WorkflowExecutionStatus.inProgress)
+                      if (orchState.awaitingStep2Confirmation) ...[
+                        Expanded(
+                          child: FilledButton.icon(
+                            icon: const Icon(Icons.code_rounded, size: 18),
+                            label: const Text('Start Step 2: Code in Editor'),
+                            onPressed: () {
+                              orchestrator.confirmStartStep2(
+                                project: selectedProject,
+                              );
+                            },
+                          ),
+                        ),
+                        const SizedBox(width: 8),
+                        Expanded(
+                          child: OutlinedButton.icon(
+                            icon: const Icon(
+                              Icons.stop,
+                              size: 18,
+                              color: AppColors.statusError,
+                            ),
+                            label: const Text(
+                              'Cancel',
+                              style: TextStyle(color: AppColors.statusError),
+                            ),
+                            onPressed: orchestrator.cancel,
+                          ),
+                        ),
+                      ] else if (orchState.status !=
+                          WorkflowExecutionStatus.inProgress) ...[
                         Expanded(
                           child: FilledButton.icon(
                             icon: const Icon(Icons.play_arrow, size: 18),
-                            label: const Text('Start Workflow'),
+                            label: const Text('Start Workflow (Step 1)'),
                             onPressed: () {
                               orchestrator.runWorkflow(
                                 project: selectedProject,
@@ -309,8 +403,8 @@ class _AutomationScreenState extends ConsumerState<AutomationScreen> {
                               );
                             },
                           ),
-                        )
-                      else ...[
+                        ),
+                      ] else ...[
                         Expanded(
                           child: OutlinedButton.icon(
                             icon: const Icon(Icons.pause, size: 18),
@@ -334,8 +428,9 @@ class _AutomationScreenState extends ConsumerState<AutomationScreen> {
                           ),
                         ),
                       ],
-                      if (orchState.status ==
-                          WorkflowExecutionStatus.paused) ...[
+                      if (!orchState.awaitingStep2Confirmation &&
+                          orchState.status ==
+                              WorkflowExecutionStatus.paused) ...[
                         const SizedBox(width: 8),
                         Expanded(
                           child: FilledButton.icon(

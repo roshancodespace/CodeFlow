@@ -223,9 +223,35 @@ void main() {
         expect(defaultConfig.humanMistakesEnabled, isTrue);
         expect(defaultConfig.mistakeProbabilityPercent, equals(3));
         expect(defaultConfig.thinkingPausesEnabled, isTrue);
+        expect(defaultConfig.burstCadenceEnabled, isTrue);
         expect(defaultConfig.deterministicTestMode, isFalse);
       },
     );
+
+    test('burst cadence types multiple words in human flow bursts', () async {
+      final burstHid = FakeBluetoothHidService();
+      final burstEngine = TypingCadenceEngine(
+        hidService: burstHid,
+        config: const CadenceConfig(
+          targetCps: 50,
+          burstCadenceEnabled: true,
+          humanJitterEnabled: false,
+          humanMistakesEnabled: false,
+          thinkingPausesEnabled: false,
+          deterministicTestMode: true,
+        ),
+      );
+
+      const phrase = 'final String name = "CodeFlow";\n';
+      final offset = await burstEngine.typeContent(
+        content: phrase,
+        fileName: 'model.dart',
+      );
+
+      expect(offset, equals(phrase.length));
+      expect(burstHid.typedCharacters.join(''), equals(phrase));
+      burstEngine.dispose();
+    });
 
     test(
       'generates adjacent typo, backspace, and correct character when mistakes enabled',
