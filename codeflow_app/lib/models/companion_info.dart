@@ -103,6 +103,7 @@ class OcrResult {
   final bool isVscode;
   final String query;
   final bool queryFound;
+  final bool isTerminalOpen;
   final String text;
   final double elapsedMs;
 
@@ -113,6 +114,7 @@ class OcrResult {
     required this.isVscode,
     required this.query,
     required this.queryFound,
+    this.isTerminalOpen = false,
     required this.text,
     required this.elapsedMs,
   });
@@ -124,6 +126,7 @@ class OcrResult {
     isVscode: json['is_vscode'] as bool? ?? false,
     query: json['query'] as String? ?? '',
     queryFound: json['query_found'] as bool? ?? false,
+    isTerminalOpen: json['is_terminal_open'] as bool? ?? false,
     text: json['text'] as String? ?? '',
     elapsedMs: (json['elapsed_ms'] as num?)?.toDouble() ?? 0.0,
   );

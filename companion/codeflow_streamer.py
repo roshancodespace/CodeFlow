@@ -1006,6 +1006,9 @@ class CodeFlowCompanionServer:
                         img = img.crop((0, 0, w, max(10, int(h * 0.35))))
                     elif reg == "editor":
                         img = img.crop((0, 0, w, max(10, int(h * 0.60))))
+                    elif reg == "bottom":
+                        # Crop bottom 45% where VS Code terminal / panel resides
+                        img = img.crop((0, int(h * 0.55), w, h))
 
                     buf = io.BytesIO()
                     img.save(buf, format="PNG")
@@ -1032,6 +1035,20 @@ class CodeFlowCompanionServer:
         else:
             query_found = bool(active_window)
 
+        is_terminal_open = any(
+            t in ocr_text.lower()
+            for t in [
+                "terminal",
+                "bash",
+                "zsh",
+                "powershell",
+                "cmd.exe",
+                "debug console",
+                "output",
+                "problems",
+            ]
+        ) or any(c in ocr_text for c in ["$", ">", "~", "❯"])
+
         elapsed_ms = round((time.perf_counter() - t_start) * 1000.0, 1)
 
         return web.json_response(
@@ -1043,6 +1060,7 @@ class CodeFlowCompanionServer:
                 "is_vscode": is_vscode,
                 "query": query,
                 "query_found": query_found,
+                "is_terminal_open": is_terminal_open,
                 "text": ocr_text[:1200],
                 "elapsed_ms": elapsed_ms,
                 "timestamp": time.time(),

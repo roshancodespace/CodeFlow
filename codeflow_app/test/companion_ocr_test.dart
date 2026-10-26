@@ -16,6 +16,7 @@ void main() {
         'is_vscode': true,
         'query': 'pubspec.yaml',
         'query_found': true,
+        'is_terminal_open': true,
         'text': 'File Edit Selection ... pubspec.yaml ...',
         'elapsed_ms': 742.5,
       };
@@ -27,6 +28,7 @@ void main() {
       expect(ocr.isVscode, isTrue);
       expect(ocr.query, equals('pubspec.yaml'));
       expect(ocr.queryFound, isTrue);
+      expect(ocr.isTerminalOpen, isTrue);
       expect(ocr.elapsedMs, equals(742.5));
     });
 
@@ -37,6 +39,7 @@ void main() {
       expect(ocr.activeWindow, isEmpty);
       expect(ocr.isVscode, isFalse);
       expect(ocr.queryFound, isFalse);
+      expect(ocr.isTerminalOpen, isFalse);
       expect(ocr.elapsedMs, equals(0.0));
     });
   });

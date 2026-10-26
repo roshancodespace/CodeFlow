@@ -181,12 +181,12 @@ class OrchestratorController extends ChangeNotifier {
       ),
       WorkflowStep(
         title: isVsCode
-            ? 'Command Panel & OCR Tab Verification'
+            ? 'Terminal File Creation & Quick Open'
             : (useDirect ? 'Companion Workspace Sync' : 'Toggle Terminal'),
         details: isVsCode
             ? (isMac
-                  ? 'Shortcut: Cmd + Shift + P -> File: New File -> OCR screen verify editor tab'
-                  : 'Shortcut: Ctrl + Shift + P -> File: New File -> OCR screen verify editor tab')
+                  ? 'Integrated Terminal creation -> Cmd + P navigate -> Code in Editor'
+                  : 'Integrated Terminal creation -> Ctrl + P navigate -> Code in Editor')
             : (useDirect
                   ? 'Direct workspace transfer via companion API'
                   : (isMac ? 'Shortcut: Cmd + `' : 'Shortcut: Ctrl + `')),
@@ -321,25 +321,31 @@ class OrchestratorController extends ChangeNotifier {
 
         if (mode == 'vscodeEditor') {
           _state = _state.copyWith(
-            currentOperation: 'Preparing VS Code editor workspace...',
+            currentOperation: 'Checking VS Code integrated terminal...',
           );
           notifyListeners();
-          // If companion is available, ensure files/directories exist on disk so Quick Open indexes them
+
+          // Check if terminal is open via bottom OCR
+          bool terminalOpen = false;
           if (companionAvailable) {
-            for (final f in selectedFiles) {
-              try {
-                await _fileTransferService.transferFile(
-                  host: host,
-                  port: port,
-                  token: token,
-                  file: f,
-                  fileContent: '',
-                  overwrite: false,
-                );
-              } catch (_) {}
-            }
+            final ocr = await _companionApi.getScreenOcr(
+              host: host,
+              port: port,
+              token: token,
+              region: 'bottom',
+            );
+            terminalOpen = ocr != null && ocr.isTerminalOpen;
           }
-          await Future.delayed(const Duration(milliseconds: 300));
+
+          // Open terminal if not already open: Ctrl + ` (or Cmd + ` on macOS)
+          if (!terminalOpen) {
+            await _hidService.sendKeyChord(
+              hidCode: HidScancodes.graveAccentTilde,
+              ctrl: !isMac,
+              meta: isMac,
+            );
+            await Future.delayed(const Duration(milliseconds: 350));
+          }
         } else if (mode == 'hidTerminalShell') {
           // Open terminal Ctrl + ~ (or Cmd + ~ on Mac)
           await _hidService.sendKeyChord(
@@ -467,7 +473,61 @@ class OrchestratorController extends ChangeNotifier {
             );
             notifyListeners();
 
-            // 1. Ensure file exists on disk so VS Code and filesystem index it
+            // 1. Ensure VS Code Integrated Terminal is open and focused
+            _state = _state.copyWith(
+              currentFileIndex: i,
+              currentOperation: 'Terminal: Focusing for ${file.relativePath}...',
+            );
+            notifyListeners();
+
+            bool terminalActive = false;
+            if (companionAvailable) {
+              final bottomOcr = await _companionApi.getScreenOcr(
+                host: host,
+                port: port,
+                token: token,
+                region: 'bottom',
+              );
+              terminalActive = bottomOcr != null && bottomOcr.isTerminalOpen;
+            }
+
+            // If terminal is not open, open it: Ctrl + ` (Cmd + ` on macOS)
+            if (!terminalActive) {
+              await _hidService.sendKeyChord(
+                hidCode: HidScancodes.graveAccentTilde,
+                ctrl: !isMac,
+                meta: isMac,
+              );
+              await Future.delayed(const Duration(milliseconds: 350));
+            }
+
+            // 2. Progressive file creation in terminal using humanized command typing
+            _state = _state.copyWith(
+              currentOperation:
+                  'Terminal: Creating ${file.relativePath}...',
+            );
+            notifyListeners();
+
+            final dir = file.relativePath.contains('/')
+                ? file.relativePath.substring(
+                    0,
+                    file.relativePath.lastIndexOf('/'),
+                  )
+                : '';
+
+            final touchCmd = isWindows
+                ? '${dir.isNotEmpty ? 'mkdir -Force "$dir"; ' : ''}New-Item -ItemType File -Force -Path "${file.relativePath}"\n'
+                : '${dir.isNotEmpty ? 'mkdir -p "$dir" && ' : ''}touch "${file.relativePath}"\n';
+
+            for (final ch in touchCmd.split('')) {
+              if (_isCancelled) break;
+              await _hidService.typeCharacter(ch);
+              await Future.delayed(const Duration(milliseconds: 14));
+            }
+            if (_isCancelled) break;
+            await Future.delayed(const Duration(milliseconds: 250));
+
+            // Also ensure companion disk sync if online (fail-safe for immediate indexing)
             if (companionAvailable) {
               try {
                 await _fileTransferService.transferFile(
@@ -479,42 +539,12 @@ class OrchestratorController extends ChangeNotifier {
                   overwrite: false,
                 );
               } catch (_) {}
-            } else if (startCharOffset == 0) {
-              // Quick touch via terminal if companion not connected
-              final dir = file.relativePath.contains('/')
-                  ? file.relativePath.substring(
-                      0,
-                      file.relativePath.lastIndexOf('/'),
-                    )
-                  : '';
-              await _hidService.sendKeyChord(
-                hidCode: HidScancodes.graveAccentTilde,
-                ctrl: !isMac,
-                meta: isMac,
-              );
-              await Future.delayed(const Duration(milliseconds: 300));
-              final touchCmd = isWindows
-                  ? '${dir.isNotEmpty ? 'mkdir -Force "$dir"; ' : ''}New-Item -ItemType File -Force -Path "${file.relativePath}"\n'
-                  : '${dir.isNotEmpty ? 'mkdir -p "$dir" && ' : ''}touch "${file.relativePath}"\n';
-              for (final ch in touchCmd.split('')) {
-                await _hidService.typeCharacter(ch);
-                await Future.delayed(const Duration(milliseconds: 12));
-              }
-              await Future.delayed(const Duration(milliseconds: 300));
-              // Toggle terminal closed
-              await _hidService.sendKeyChord(
-                hidCode: HidScancodes.graveAccentTilde,
-                ctrl: !isMac,
-                meta: isMac,
-              );
-              await Future.delayed(const Duration(milliseconds: 300));
             }
 
-            // 2. Open Command Panel (Ctrl+Shift+P / Cmd+Shift+P) to create/open file
+            // 3. Navigate to file in VS Code editor using Quick Open (Ctrl+P / Cmd+P)
             _state = _state.copyWith(
-              currentFileIndex: i,
               currentOperation:
-                  'Command Panel: Creating ${file.relativePath}...',
+                  'Navigating to ${file.relativePath} (Ctrl+P)...',
             );
             notifyListeners();
 
@@ -522,42 +552,27 @@ class OrchestratorController extends ChangeNotifier {
               hidCode: HidScancodes.keyP,
               ctrl: !isMac,
               meta: isMac,
-              shift: true,
             );
             await Future.delayed(const Duration(milliseconds: 350));
 
-            // Type "File: New File" into the Command Palette
-            const newFileCmd = 'File: New File';
-            for (final ch in newFileCmd.split('')) {
-              if (_isCancelled) break;
-              await _hidService.typeCharacter(ch);
-              await Future.delayed(const Duration(milliseconds: 18));
-            }
-            if (_isCancelled) break;
-
-            await Future.delayed(const Duration(milliseconds: 250));
-            // Press Enter to confirm Command Palette selection
-            await _hidService.sendKeyPress(HidScancodes.enter);
-            await Future.delayed(const Duration(milliseconds: 400));
-
-            // Type the relative file path into the input prompt
+            // Type the relative path into Quick Open
             for (final ch in file.relativePath.split('')) {
               if (_isCancelled) break;
               await _hidService.typeCharacter(ch);
-              await Future.delayed(const Duration(milliseconds: 18));
+              await Future.delayed(const Duration(milliseconds: 16));
             }
             if (_isCancelled) break;
 
             await Future.delayed(const Duration(milliseconds: 250));
-            // Press Enter to create/open file and focus editor buffer
+            // Press Enter to focus editor tab
             await _hidService.sendKeyPress(HidScancodes.enter);
-            await Future.delayed(const Duration(milliseconds: 600));
+            await Future.delayed(const Duration(milliseconds: 550));
 
-            // 3. OCR Screen Capture Verification
+            // 4. Screen OCR Verification of active editor tab
             if (companionAvailable && !_isCancelled) {
               _state = _state.copyWith(
                 currentOperation:
-                    'OCR verifying screen tab for ${file.name}...',
+                    'OCR verifying editor tab: ${file.name}...',
               );
               notifyListeners();
 
@@ -580,36 +595,29 @@ class OrchestratorController extends ChangeNotifier {
                   notifyListeners();
                   break;
                 }
-                await Future.delayed(const Duration(milliseconds: 400));
+                await Future.delayed(const Duration(milliseconds: 350));
               }
 
-              // Fallback to Quick Open (Ctrl+P) if Command Palette did not switch tab
+              // Fallback if Quick Open didn't switch tab on first Enter
               if (!ocrConfirmed && !_isCancelled) {
-                _state = _state.copyWith(
-                  currentOperation:
-                      'Quick Open fallback for ${file.name} (Ctrl+P)...',
-                );
-                notifyListeners();
-
                 await _hidService.sendKeyChord(
                   hidCode: HidScancodes.keyP,
                   ctrl: !isMac,
                   meta: isMac,
                 );
-                await Future.delayed(const Duration(milliseconds: 300));
-
-                for (final ch in file.relativePath.split('')) {
+                await Future.delayed(const Duration(milliseconds: 250));
+                for (final ch in file.name.split('')) {
                   if (_isCancelled) break;
                   await _hidService.typeCharacter(ch);
-                  await Future.delayed(const Duration(milliseconds: 16));
+                  await Future.delayed(const Duration(milliseconds: 14));
                 }
-                await Future.delayed(const Duration(milliseconds: 250));
+                await Future.delayed(const Duration(milliseconds: 200));
                 await _hidService.sendKeyPress(HidScancodes.enter);
-                await Future.delayed(const Duration(milliseconds: 500));
+                await Future.delayed(const Duration(milliseconds: 450));
               }
             }
 
-            // 4. Clear existing editor buffer if starting from offset 0
+            // 5. Clear existing editor buffer if starting from offset 0
             if (startCharOffset == 0 && !_isCancelled) {
               // Select all (Ctrl+A / Cmd+A)
               await _hidService.sendKeyChord(
