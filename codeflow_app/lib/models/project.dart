@@ -53,27 +53,28 @@ class Project {
   }
 
   Map<String, dynamic> toJson() => {
-        'id': id,
-        'name': name,
-        'rootPath': rootPath,
-        'createdAt': createdAt.toIso8601String(),
-        'updatedAt': updatedAt.toIso8601String(),
-        'totalFiles': totalFiles,
-        'totalSizeInBytes': totalSizeInBytes,
-        'files': files.map((f) => f.toJson()).toList(),
-      };
+    'id': id,
+    'name': name,
+    'rootPath': rootPath,
+    'createdAt': createdAt.toIso8601String(),
+    'updatedAt': updatedAt.toIso8601String(),
+    'totalFiles': totalFiles,
+    'totalSizeInBytes': totalSizeInBytes,
+    'files': files.map((f) => f.toJson()).toList(),
+  };
 
   factory Project.fromJson(Map<String, dynamic> json) => Project(
-        id: json['id'] as String,
-        name: json['name'] as String,
-        rootPath: json['rootPath'] as String,
-        createdAt: DateTime.parse(json['createdAt'] as String),
-        updatedAt: DateTime.parse(json['updatedAt'] as String),
-        totalFiles: json['totalFiles'] as int? ?? 0,
-        totalSizeInBytes: json['totalSizeInBytes'] as int? ?? 0,
-        files: (json['files'] as List<dynamic>?)
-                ?.map((f) => SourceFile.fromJson(f as Map<String, dynamic>))
-                .toList() ??
-            const [],
-      );
+    id: json['id'] as String,
+    name: json['name'] as String,
+    rootPath: json['rootPath'] as String,
+    createdAt: DateTime.parse(json['createdAt'] as String),
+    updatedAt: DateTime.parse(json['updatedAt'] as String),
+    totalFiles: json['totalFiles'] as int? ?? 0,
+    totalSizeInBytes: json['totalSizeInBytes'] as int? ?? 0,
+    files:
+        (json['files'] as List<dynamic>?)
+            ?.map((f) => SourceFile.fromJson(f as Map<String, dynamic>))
+            .toList() ??
+        const [],
+  );
 }

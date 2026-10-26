@@ -20,13 +20,13 @@ class MonitorInfo {
   });
 
   factory MonitorInfo.fromJson(Map<String, dynamic> json) => MonitorInfo(
-        id: json['id'] as int? ?? 1,
-        isAll: json['is_all'] as bool? ?? false,
-        left: json['left'] as int? ?? 0,
-        top: json['top'] as int? ?? 0,
-        width: json['width'] as int? ?? 1920,
-        height: json['height'] as int? ?? 1080,
-      );
+    id: json['id'] as int? ?? 1,
+    isAll: json['is_all'] as bool? ?? false,
+    left: json['left'] as int? ?? 0,
+    top: json['top'] as int? ?? 0,
+    width: json['width'] as int? ?? 1920,
+    height: json['height'] as int? ?? 1080,
+  );
 }
 
 /// Information returned by the companion's /info endpoint.
@@ -65,8 +65,10 @@ class CompanionInfo {
   });
 
   factory CompanionInfo.fromJson(Map<String, dynamic> json) {
-    final streamSettings = json['stream_settings'] as Map<String, dynamic>? ?? {};
-    final monitorsList = (json['monitors'] as List<dynamic>?)
+    final streamSettings =
+        json['stream_settings'] as Map<String, dynamic>? ?? {};
+    final monitorsList =
+        (json['monitors'] as List<dynamic>?)
             ?.map((m) => MonitorInfo.fromJson(m as Map<String, dynamic>))
             .toList() ??
         const [];
@@ -82,7 +84,8 @@ class CompanionInfo {
       activeWindow: json['active_window'] as String?,
       targetFps: streamSettings['target_fps'] as int? ?? 30,
       jpegQuality: streamSettings['jpeg_quality'] as int? ?? 75,
-      currentCaptureFps: (json['current_capture_fps'] as num?)?.toDouble() ?? 0.0,
+      currentCaptureFps:
+          (json['current_capture_fps'] as num?)?.toDouble() ?? 0.0,
       latestCaptureDurationMs:
           (json['latest_capture_duration_ms'] as num?)?.toDouble() ?? 0.0,
       authRequired: json['auth_required'] as bool? ?? false,

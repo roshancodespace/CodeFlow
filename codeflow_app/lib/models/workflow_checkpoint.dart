@@ -67,16 +67,16 @@ class WorkflowCheckpoint {
   }
 
   Map<String, dynamic> toJson() => {
-        'projectId': projectId,
-        'workflowVersion': workflowVersion,
-        'currentOperationIndex': currentOperationIndex,
-        'currentFileIndex': currentFileIndex,
-        'charOffset': charOffset,
-        'status': status.name,
-        'completedRelativePaths': completedRelativePaths,
-        'lastUpdated': lastUpdated.toIso8601String(),
-        'lastError': lastError,
-      };
+    'projectId': projectId,
+    'workflowVersion': workflowVersion,
+    'currentOperationIndex': currentOperationIndex,
+    'currentFileIndex': currentFileIndex,
+    'charOffset': charOffset,
+    'status': status.name,
+    'completedRelativePaths': completedRelativePaths,
+    'lastUpdated': lastUpdated.toIso8601String(),
+    'lastError': lastError,
+  };
 
   factory WorkflowCheckpoint.fromJson(Map<String, dynamic> json) =>
       WorkflowCheckpoint(
@@ -91,9 +91,9 @@ class WorkflowCheckpoint {
         ),
         completedRelativePaths:
             (json['completedRelativePaths'] as List<dynamic>?)
-                    ?.map((e) => e as String)
-                    .toList() ??
-                const [],
+                ?.map((e) => e as String)
+                .toList() ??
+            const [],
         lastUpdated: DateTime.parse(json['lastUpdated'] as String),
         lastError: json['lastError'] as String?,
       );

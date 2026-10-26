@@ -18,8 +18,8 @@ class ProjectManagerService {
   ProjectManagerService({
     required LocalStorageService storage,
     http.Client? client,
-  })  : _storage = storage,
-        _client = client ?? http.Client();
+  }) : _storage = storage,
+       _client = client ?? http.Client();
 
   /// Get the base directory where projects are stored on device
   Future<Directory> _getWorkspacesDir() async {
@@ -36,7 +36,9 @@ class ProjectManagerService {
     required List<int> zipBytes,
     required String projectName,
   }) async {
-    final sanitizedName = projectName.replaceAll(RegExp(r'[^\w\s\.-]'), '_').trim();
+    final sanitizedName = projectName
+        .replaceAll(RegExp(r'[^\w\s\.-]'), '_')
+        .trim();
     final projectId = 'proj_${DateTime.now().millisecondsSinceEpoch}';
     final workspacesDir = await _getWorkspacesDir();
     final projectDir = Directory(p.join(workspacesDir.path, projectId));
@@ -54,7 +56,9 @@ class ProjectManagerService {
       final rawPath = file.name;
       // Path traversal security check
       final normPath = p.normalize(rawPath).replaceAll('\\', '/');
-      if (normPath.startsWith('..') || normPath.contains('/../') || p.isAbsolute(normPath)) {
+      if (normPath.startsWith('..') ||
+          normPath.contains('/../') ||
+          p.isAbsolute(normPath)) {
         debugPrint('Skipping unsafe ZIP entry: $rawPath');
         continue;
       }
@@ -83,26 +87,30 @@ class ProjectManagerService {
         final sha = sha256.convert(contentBytes).toString();
         final ext = p.extension(normPath);
 
-        sourceFiles.add(SourceFile(
-          path: outPath,
-          relativePath: normPath,
-          sizeInBytes: contentBytes.length,
-          extension: ext,
-          isDirectory: false,
-          isSelected: true,
-          content: contentStr,
-          sha256: sha,
-        ));
+        sourceFiles.add(
+          SourceFile(
+            path: outPath,
+            relativePath: normPath,
+            sizeInBytes: contentBytes.length,
+            extension: ext,
+            isDirectory: false,
+            isSelected: true,
+            content: contentStr,
+            sha256: sha,
+          ),
+        );
       } else {
         await Directory(outPath).create(recursive: true);
-        sourceFiles.add(SourceFile(
-          path: outPath,
-          relativePath: normPath,
-          sizeInBytes: 0,
-          extension: '',
-          isDirectory: true,
-          isSelected: true,
-        ));
+        sourceFiles.add(
+          SourceFile(
+            path: outPath,
+            relativePath: normPath,
+            sizeInBytes: 0,
+            extension: '',
+            isDirectory: true,
+            isSelected: true,
+          ),
+        );
       }
     }
 
@@ -142,11 +150,16 @@ class ProjectManagerService {
     } else if (slug.startsWith('github.com/')) {
       slug = slug.substring('github.com/'.length);
     }
-    slug = slug.replaceAll(RegExp(r'\.git$'), '').trim().replaceAll(RegExp(r'/+$'), '');
+    slug = slug
+        .replaceAll(RegExp(r'\.git$'), '')
+        .trim()
+        .replaceAll(RegExp(r'/+$'), '');
 
     final parts = slug.split('/');
     if (parts.length != 2 || parts[0].isEmpty || parts[1].isEmpty) {
-      throw Exception('Invalid GitHub repository format. Use "owner/repo" or full URL.');
+      throw Exception(
+        'Invalid GitHub repository format. Use "owner/repo" or full URL.',
+      );
     }
 
     final owner = parts[0];
@@ -163,10 +176,9 @@ class ProjectManagerService {
     List<int>? zipBytes;
     for (final url in downloadUrls) {
       try {
-        final resp = await _client.get(
-          Uri.parse(url),
-          headers: {'User-Agent': 'CodeFlow-Mobile-App'},
-        ).timeout(const Duration(seconds: 40));
+        final resp = await _client
+            .get(Uri.parse(url), headers: {'User-Agent': 'CodeFlow-Mobile-App'})
+            .timeout(const Duration(seconds: 40));
 
         if (resp.statusCode == 200 && resp.bodyBytes.isNotEmpty) {
           zipBytes = resp.bodyBytes;
@@ -182,10 +194,7 @@ class ProjectManagerService {
     }
 
     onProgress?.call('Extracting files and indexing project structure...');
-    return importFromZipBytes(
-      zipBytes: zipBytes,
-      projectName: repo,
-    );
+    return importFromZipBytes(zipBytes: zipBytes, projectName: repo);
   }
 
   /// Create a sample starter project with typical source files for instant testing
@@ -197,15 +206,18 @@ class ProjectManagerService {
       },
       {
         'path': 'lib/models/user.dart',
-        'content': "class User {\n  final String id;\n  final String name;\n  User(this.id, this.name);\n}\n",
+        'content':
+            "class User {\n  final String id;\n  final String name;\n  User(this.id, this.name);\n}\n",
       },
       {
         'path': 'scripts/deploy.py',
-        'content': "import sys\nprint('Running CodeFlow deployment script...')\n",
+        'content':
+            "import sys\nprint('Running CodeFlow deployment script...')\n",
       },
       {
         'path': 'README.md',
-        'content': "# CodeFlow Workspace\nAutomated cross-platform coding and terminal injection.\n",
+        'content':
+            "# CodeFlow Workspace\nAutomated cross-platform coding and terminal injection.\n",
       },
       {
         'path': 'config/settings.json',

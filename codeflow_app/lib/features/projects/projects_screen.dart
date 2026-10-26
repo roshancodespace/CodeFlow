@@ -22,14 +22,20 @@ class _ProjectsScreenState extends ConsumerState<ProjectsScreen> {
     final confirmed = await showDialog<bool>(
       context: context,
       builder: (ctx) => AlertDialog(
-        title: const Text('Import GitHub Repository', style: TextStyle(fontSize: 16)),
+        title: const Text(
+          'Import GitHub Repository',
+          style: TextStyle(fontSize: 16),
+        ),
         content: Column(
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             const Text(
               'Enter public GitHub repository (e.g. "torvalds/subsurface" or full URL):',
-              style: TextStyle(fontSize: 12, color: AppColors.lightTextSecondary),
+              style: TextStyle(
+                fontSize: 12,
+                color: AppColors.lightTextSecondary,
+              ),
             ),
             const SizedBox(height: 12),
             TextField(
@@ -108,7 +114,9 @@ class _ProjectsScreenState extends ConsumerState<ProjectsScreen> {
             child: const Text('Cancel'),
           ),
           FilledButton(
-            style: FilledButton.styleFrom(backgroundColor: AppColors.statusError),
+            style: FilledButton.styleFrom(
+              backgroundColor: AppColors.statusError,
+            ),
             onPressed: () => Navigator.pop(ctx, true),
             child: const Text('Delete'),
           ),
@@ -119,9 +127,9 @@ class _ProjectsScreenState extends ConsumerState<ProjectsScreen> {
     if (confirmed == true) {
       await ref.read(projectsProvider.notifier).deleteProject(project.id);
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Deleted ${project.name}')),
-        );
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text('Deleted ${project.name}')));
       }
     }
   }
@@ -129,7 +137,9 @@ class _ProjectsScreenState extends ConsumerState<ProjectsScreen> {
   @override
   Widget build(BuildContext context) {
     final isDark = Theme.of(context).brightness == Brightness.dark;
-    final surfaceColor = isDark ? AppColors.darkSurface : AppColors.lightSurface;
+    final surfaceColor = isDark
+        ? AppColors.darkSurface
+        : AppColors.lightSurface;
     final borderColor = isDark ? AppColors.darkBorder : AppColors.lightBorder;
     final projects = ref.watch(projectsProvider);
 
@@ -156,7 +166,10 @@ class _ProjectsScreenState extends ConsumerState<ProjectsScreen> {
                       const SizedBox(height: 16),
                       Text(
                         _importProgressMessage ?? 'Importing...',
-                        style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w500),
+                        style: const TextStyle(
+                          fontSize: 13,
+                          fontWeight: FontWeight.w500,
+                        ),
                         textAlign: TextAlign.center,
                       ),
                     ],
@@ -164,85 +177,103 @@ class _ProjectsScreenState extends ConsumerState<ProjectsScreen> {
                 ),
               )
             : projects.isEmpty
-                ? Center(
-                    child: Padding(
-                      padding: const EdgeInsets.all(24.0),
-                      child: Column(
+            ? Center(
+                child: Padding(
+                  padding: const EdgeInsets.all(24.0),
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      const Icon(
+                        Icons.folder_open_outlined,
+                        size: 40,
+                        color: AppColors.lightTextMuted,
+                      ),
+                      const SizedBox(height: 12),
+                      const Text(
+                        'No projects in workspace.',
+                        style: TextStyle(
+                          fontSize: 14,
+                          fontWeight: FontWeight.w500,
+                          color: AppColors.lightTextSecondary,
+                        ),
+                      ),
+                      const SizedBox(height: 6),
+                      const Text(
+                        'Import from a GitHub repository or create a sample starter project.',
+                        textAlign: TextAlign.center,
+                        style: TextStyle(
+                          fontSize: 12,
+                          color: AppColors.lightTextMuted,
+                        ),
+                      ),
+                      const SizedBox(height: 16),
+                      FilledButton(
+                        onPressed: () => _showImportBottomSheet(context),
+                        child: const Text('Import Project'),
+                      ),
+                    ],
+                  ),
+                ),
+              )
+            : ListView.builder(
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 16,
+                  vertical: 12,
+                ),
+                itemCount: projects.length,
+                itemBuilder: (context, index) {
+                  final p = projects[index];
+                  return Container(
+                    margin: const EdgeInsets.only(bottom: 8),
+                    decoration: BoxDecoration(
+                      color: surfaceColor,
+                      border: Border.all(color: borderColor),
+                      borderRadius: BorderRadius.circular(6),
+                    ),
+                    child: ListTile(
+                      contentPadding: const EdgeInsets.symmetric(
+                        horizontal: 14,
+                        vertical: 4,
+                      ),
+                      leading: const Icon(
+                        Icons.folder,
+                        color: AppColors.accentLight,
+                        size: 24,
+                      ),
+                      title: Text(
+                        p.name,
+                        style: const TextStyle(
+                          fontSize: 14,
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
+                      subtitle: Text(
+                        '${p.totalFiles} files • ${p.selectedCodeFilesCount} code files • ${_formatBytes(p.totalSizeInBytes)}',
+                        style: const TextStyle(
+                          fontSize: 11,
+                          color: AppColors.lightTextMuted,
+                        ),
+                      ),
+                      trailing: Row(
                         mainAxisSize: MainAxisSize.min,
                         children: [
-                          const Icon(Icons.folder_open_outlined,
-                              size: 40, color: AppColors.lightTextMuted),
-                          const SizedBox(height: 12),
-                          const Text(
-                            'No projects in workspace.',
-                            style: TextStyle(
-                              fontSize: 14,
-                              fontWeight: FontWeight.w500,
-                              color: AppColors.lightTextSecondary,
-                            ),
-                          ),
-                          const SizedBox(height: 6),
-                          const Text(
-                            'Import from a GitHub repository or create a sample starter project.',
-                            textAlign: TextAlign.center,
-                            style: TextStyle(
-                              fontSize: 12,
+                          IconButton(
+                            icon: const Icon(
+                              Icons.delete_outline,
+                              size: 18,
                               color: AppColors.lightTextMuted,
                             ),
+                            tooltip: 'Delete Project',
+                            onPressed: () => _confirmDelete(p),
                           ),
-                          const SizedBox(height: 16),
-                          FilledButton(
-                            onPressed: () => _showImportBottomSheet(context),
-                            child: const Text('Import Project'),
-                          ),
+                          const Icon(Icons.chevron_right, size: 18),
                         ],
                       ),
+                      onTap: () => widget.onSelectProject(p),
                     ),
-                  )
-                : ListView.builder(
-                    padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-                    itemCount: projects.length,
-                    itemBuilder: (context, index) {
-                      final p = projects[index];
-                      return Container(
-                        margin: const EdgeInsets.only(bottom: 8),
-                        decoration: BoxDecoration(
-                          color: surfaceColor,
-                          border: Border.all(color: borderColor),
-                          borderRadius: BorderRadius.circular(6),
-                        ),
-                        child: ListTile(
-                          contentPadding:
-                              const EdgeInsets.symmetric(horizontal: 14, vertical: 4),
-                          leading: const Icon(Icons.folder,
-                              color: AppColors.accentLight, size: 24),
-                          title: Text(
-                            p.name,
-                            style: const TextStyle(
-                                fontSize: 14, fontWeight: FontWeight.w600),
-                          ),
-                          subtitle: Text(
-                            '${p.totalFiles} files • ${p.selectedCodeFilesCount} code files • ${_formatBytes(p.totalSizeInBytes)}',
-                            style: const TextStyle(
-                                fontSize: 11, color: AppColors.lightTextMuted),
-                          ),
-                          trailing: Row(
-                            mainAxisSize: MainAxisSize.min,
-                            children: [
-                              IconButton(
-                                icon: const Icon(Icons.delete_outline,
-                                    size: 18, color: AppColors.lightTextMuted),
-                                tooltip: 'Delete Project',
-                                onPressed: () => _confirmDelete(p),
-                              ),
-                              const Icon(Icons.chevron_right, size: 18),
-                            ],
-                          ),
-                          onTap: () => widget.onSelectProject(p),
-                        ),
-                      );
-                    },
-                  ),
+                  );
+                },
+              ),
       ),
     );
   }
@@ -261,8 +292,10 @@ class _ProjectsScreenState extends ConsumerState<ProjectsScreen> {
             children: [
               ListTile(
                 leading: const Icon(Icons.code, size: 20),
-                title: const Text('Import from Public GitHub Repository',
-                    style: TextStyle(fontSize: 13)),
+                title: const Text(
+                  'Import from Public GitHub Repository',
+                  style: TextStyle(fontSize: 13),
+                ),
                 onTap: () {
                   Navigator.pop(ctx);
                   _showGitHubImportDialog();
@@ -270,8 +303,10 @@ class _ProjectsScreenState extends ConsumerState<ProjectsScreen> {
               ),
               ListTile(
                 leading: const Icon(Icons.auto_awesome_outlined, size: 20),
-                title: const Text('Create Sample Starter Workspace',
-                    style: TextStyle(fontSize: 13)),
+                title: const Text(
+                  'Create Sample Starter Workspace',
+                  style: TextStyle(fontSize: 13),
+                ),
                 onTap: () async {
                   Navigator.pop(ctx);
                   final p = await ref

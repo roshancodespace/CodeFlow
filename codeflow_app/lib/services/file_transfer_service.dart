@@ -26,7 +26,8 @@ class FileTransferResult {
 class FileTransferService {
   final http.Client _client;
 
-  FileTransferService({http.Client? client}) : _client = client ?? http.Client();
+  FileTransferService({http.Client? client})
+    : _client = client ?? http.Client();
 
   /// Calculate SHA-256 hash of UTF-8 content
   static String computeSha256(String content) {
@@ -47,9 +48,7 @@ class FileTransferService {
 
     try {
       final uri = Uri.parse('http://$host:$port/workspace/transfer');
-      final headers = <String, String>{
-        'Content-Type': 'application/json',
-      };
+      final headers = <String, String>{'Content-Type': 'application/json'};
       if (token != null && token.isNotEmpty) {
         headers['Authorization'] = 'Bearer $token';
         headers['X-CodeFlow-Token'] = token;

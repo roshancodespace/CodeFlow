@@ -94,7 +94,9 @@ class _FileTreeWidgetState extends State<FileTreeWidget> {
     final displayFiles = _searchFilter.isEmpty
         ? _currentFiles
         : _currentFiles.where((f) {
-            return f.relativePath.toLowerCase().contains(_searchFilter.toLowerCase());
+            return f.relativePath.toLowerCase().contains(
+              _searchFilter.toLowerCase(),
+            );
           }).toList();
 
     for (final sf in displayFiles) {
@@ -126,7 +128,8 @@ class _FileTreeWidgetState extends State<FileTreeWidget> {
               name: part,
               relativePath: currentPath,
               isDirectory: true,
-              isExpanded: _searchFilter.isNotEmpty, // Auto-expand when searching
+              isExpanded:
+                  _searchFilter.isNotEmpty, // Auto-expand when searching
             );
             dirMap[currentPath] = dirNode;
             if (parent != null) {
@@ -146,7 +149,9 @@ class _FileTreeWidgetState extends State<FileTreeWidget> {
   }
 
   void _toggleFileSelection(SourceFile file) {
-    final idx = _currentFiles.indexWhere((f) => f.relativePath == file.relativePath);
+    final idx = _currentFiles.indexWhere(
+      (f) => f.relativePath == file.relativePath,
+    );
     if (idx >= 0) {
       setState(() {
         _currentFiles[idx] = file.copyWith(isSelected: !file.isSelected);
@@ -196,7 +201,9 @@ class _FileTreeWidgetState extends State<FileTreeWidget> {
   Widget build(BuildContext context) {
     final isDark = Theme.of(context).brightness == Brightness.dark;
     final borderColor = isDark ? AppColors.darkBorder : AppColors.lightBorder;
-    final selectedCount = _currentFiles.where((f) => !f.isDirectory && f.isSelected).length;
+    final selectedCount = _currentFiles
+        .where((f) => !f.isDirectory && f.isSelected)
+        .length;
     final totalCount = _currentFiles.where((f) => !f.isDirectory).length;
 
     return Column(
@@ -244,7 +251,10 @@ class _FileTreeWidgetState extends State<FileTreeWidget> {
             children: [
               Text(
                 '$selectedCount of $totalCount selected',
-                style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w500),
+                style: const TextStyle(
+                  fontSize: 12,
+                  fontWeight: FontWeight.w500,
+                ),
               ),
               const Spacer(),
               TextButton(
@@ -269,7 +279,10 @@ class _FileTreeWidgetState extends State<FileTreeWidget> {
               ? const Center(
                   child: Text(
                     'No matching files found.',
-                    style: TextStyle(color: AppColors.lightTextMuted, fontSize: 13),
+                    style: TextStyle(
+                      color: AppColors.lightTextMuted,
+                      fontSize: 13,
+                    ),
                   ),
                 )
               : ListView.builder(
@@ -297,11 +310,18 @@ class _FileTreeWidgetState extends State<FileTreeWidget> {
               });
             },
             child: Padding(
-              padding: EdgeInsets.only(left: 12.0 + (depth * 16.0), top: 4, bottom: 4, right: 8),
+              padding: EdgeInsets.only(
+                left: 12.0 + (depth * 16.0),
+                top: 4,
+                bottom: 4,
+                right: 8,
+              ),
               child: Row(
                 children: [
                   Icon(
-                    node.isExpanded ? Icons.keyboard_arrow_down : Icons.keyboard_arrow_right,
+                    node.isExpanded
+                        ? Icons.keyboard_arrow_down
+                        : Icons.keyboard_arrow_right,
                     size: 18,
                     color: AppColors.lightTextMuted,
                   ),
@@ -315,12 +335,19 @@ class _FileTreeWidgetState extends State<FileTreeWidget> {
                     },
                     visualDensity: VisualDensity.compact,
                   ),
-                  const Icon(Icons.folder_outlined, size: 16, color: AppColors.accentLight),
+                  const Icon(
+                    Icons.folder_outlined,
+                    size: 16,
+                    color: AppColors.accentLight,
+                  ),
                   const SizedBox(width: 6),
                   Expanded(
                     child: Text(
                       node.name,
-                      style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w500),
+                      style: const TextStyle(
+                        fontSize: 13,
+                        fontWeight: FontWeight.w500,
+                      ),
                       overflow: TextOverflow.ellipsis,
                     ),
                   ),
@@ -329,7 +356,9 @@ class _FileTreeWidgetState extends State<FileTreeWidget> {
             ),
           ),
           if (node.isExpanded)
-            ...node.children.map((child) => _buildTreeNodeRow(child, depth + 1)),
+            ...node.children.map(
+              (child) => _buildTreeNodeRow(child, depth + 1),
+            ),
         ],
       );
     } else {
@@ -338,7 +367,12 @@ class _FileTreeWidgetState extends State<FileTreeWidget> {
       return InkWell(
         onTap: () => _toggleFileSelection(file),
         child: Padding(
-          padding: EdgeInsets.only(left: 12.0 + (depth * 16.0), top: 3, bottom: 3, right: 12),
+          padding: EdgeInsets.only(
+            left: 12.0 + (depth * 16.0),
+            top: 3,
+            bottom: 3,
+            right: 12,
+          ),
           child: Row(
             children: [
               Checkbox(
@@ -353,7 +387,9 @@ class _FileTreeWidgetState extends State<FileTreeWidget> {
                   node.name,
                   style: TextStyle(
                     fontSize: 13,
-                    fontWeight: file.isSelected ? FontWeight.w500 : FontWeight.w400,
+                    fontWeight: file.isSelected
+                        ? FontWeight.w500
+                        : FontWeight.w400,
                   ),
                   overflow: TextOverflow.ellipsis,
                 ),
@@ -375,7 +411,9 @@ class _FileTreeWidgetState extends State<FileTreeWidget> {
 
   Widget _buildExtensionBadge(String ext) {
     Color badgeColor;
-    String label = ext.startsWith('.') ? ext.substring(1).toUpperCase() : ext.toUpperCase();
+    String label = ext.startsWith('.')
+        ? ext.substring(1).toUpperCase()
+        : ext.toUpperCase();
     if (label.isEmpty) label = 'FILE';
 
     switch (ext.toLowerCase()) {

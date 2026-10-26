@@ -140,11 +140,15 @@ class HomeScreen extends ConsumerWidget {
                               ? const SizedBox(
                                   width: 12,
                                   height: 12,
-                                  child: CircularProgressIndicator(strokeWidth: 2),
+                                  child: CircularProgressIndicator(
+                                    strokeWidth: 2,
+                                  ),
                                 )
                               : const Icon(Icons.radar, size: 14),
                           label: Text(
-                            companionState.isSearching ? 'Scanning...' : 'Scan LAN',
+                            companionState.isSearching
+                                ? 'Scanning...'
+                                : 'Scan LAN',
                             style: const TextStyle(fontSize: 12),
                           ),
                           onPressed: companionState.isSearching
@@ -157,7 +161,10 @@ class HomeScreen extends ConsumerWidget {
                         ),
                         OutlinedButton.icon(
                           icon: const Icon(Icons.edit_outlined, size: 14),
-                          label: const Text('Set PC IP', style: TextStyle(fontSize: 12)),
+                          label: const Text(
+                            'Set PC IP',
+                            style: TextStyle(fontSize: 12),
+                          ),
                           onPressed: () => _showQuickIpDialog(context, ref),
                         ),
                       ],
@@ -301,15 +308,18 @@ class HomeScreen extends ConsumerWidget {
 
   void _showQuickIpDialog(BuildContext context, WidgetRef ref) {
     final storage = ref.read(localStorageProvider);
-    final initialText =
-        storage.companionHost == '127.0.0.1' ? '' : storage.companionHost;
+    final initialText = storage.companionHost == '127.0.0.1'
+        ? ''
+        : storage.companionHost;
     final controller = TextEditingController(text: initialText);
 
     showDialog(
       context: context,
       builder: (ctx) => AlertDialog(
-        title: const Text('Connect to PC Companion',
-            style: TextStyle(fontSize: 16)),
+        title: const Text(
+          'Connect to PC Companion',
+          style: TextStyle(fontSize: 16),
+        ),
         content: Column(
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.start,
@@ -317,7 +327,9 @@ class HomeScreen extends ConsumerWidget {
             const Text(
               'Enter the LAN address displayed on your PC dashboard (e.g. 192.168.1.5 or 192.168.1.5:8090):',
               style: TextStyle(
-                  fontSize: 13, color: AppColors.lightTextSecondary),
+                fontSize: 13,
+                color: AppColors.lightTextSecondary,
+              ),
             ),
             const SizedBox(height: 12),
             TextField(

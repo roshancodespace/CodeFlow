@@ -4,8 +4,12 @@ import 'app_colors.dart';
 /// Typography configuration for CodeFlow
 class AppTypography {
   static TextTheme textTheme(bool isDark) {
-    final primary = isDark ? AppColors.darkTextPrimary : AppColors.lightTextPrimary;
-    final secondary = isDark ? AppColors.darkTextSecondary : AppColors.lightTextSecondary;
+    final primary = isDark
+        ? AppColors.darkTextPrimary
+        : AppColors.lightTextPrimary;
+    final secondary = isDark
+        ? AppColors.darkTextSecondary
+        : AppColors.lightTextSecondary;
 
     return TextTheme(
       headlineLarge: TextStyle(

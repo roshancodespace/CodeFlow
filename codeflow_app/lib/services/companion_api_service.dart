@@ -8,12 +8,11 @@ import '../models/companion_info.dart';
 class CompanionApiService {
   final http.Client _client;
 
-  CompanionApiService({http.Client? client}) : _client = client ?? http.Client();
+  CompanionApiService({http.Client? client})
+    : _client = client ?? http.Client();
 
   Map<String, String> _buildHeaders(String? token) {
-    final headers = <String, String>{
-      'Accept': 'application/json',
-    };
+    final headers = <String, String>{'Accept': 'application/json'};
     if (token != null && token.isNotEmpty) {
       headers['Authorization'] = 'Bearer $token';
       headers['X-CodeFlow-Token'] = token;

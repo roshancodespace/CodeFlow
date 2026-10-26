@@ -29,7 +29,7 @@ class CompanionDiscoveryService {
   bool _isSearching = false;
 
   CompanionDiscoveryService({CompanionApiService? apiService})
-      : _apiService = apiService ?? CompanionApiService();
+    : _apiService = apiService ?? CompanionApiService();
 
   bool get isSearching => _isSearching;
 

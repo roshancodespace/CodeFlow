@@ -67,10 +67,7 @@ class AppTheme {
         }),
         iconTheme: WidgetStateProperty.resolveWith((states) {
           if (states.contains(WidgetState.selected)) {
-            return const IconThemeData(
-              size: 22,
-              color: AppColors.accentLight,
-            );
+            return const IconThemeData(size: 22, color: AppColors.accentLight);
           }
           return const IconThemeData(
             size: 22,
@@ -110,7 +107,10 @@ class AppTheme {
         filled: true,
         fillColor: AppColors.lightSurface,
         isDense: true,
-        contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+        contentPadding: const EdgeInsets.symmetric(
+          horizontal: 12,
+          vertical: 10,
+        ),
         border: OutlineInputBorder(
           borderRadius: BorderRadius.circular(6),
           borderSide: const BorderSide(color: AppColors.lightBorder),
@@ -121,7 +121,10 @@ class AppTheme {
         ),
         focusedBorder: OutlineInputBorder(
           borderRadius: BorderRadius.circular(6),
-          borderSide: const BorderSide(color: AppColors.accentLight, width: 1.5),
+          borderSide: const BorderSide(
+            color: AppColors.accentLight,
+            width: 1.5,
+          ),
         ),
         hintStyle: const TextStyle(
           color: AppColors.lightTextMuted,
@@ -202,10 +205,7 @@ class AppTheme {
         }),
         iconTheme: WidgetStateProperty.resolveWith((states) {
           if (states.contains(WidgetState.selected)) {
-            return const IconThemeData(
-              size: 22,
-              color: AppColors.accentDark,
-            );
+            return const IconThemeData(size: 22, color: AppColors.accentDark);
           }
           return const IconThemeData(
             size: 22,
@@ -245,7 +245,10 @@ class AppTheme {
         filled: true,
         fillColor: AppColors.darkSurface,
         isDense: true,
-        contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+        contentPadding: const EdgeInsets.symmetric(
+          horizontal: 12,
+          vertical: 10,
+        ),
         border: OutlineInputBorder(
           borderRadius: BorderRadius.circular(6),
           borderSide: const BorderSide(color: AppColors.darkBorder),

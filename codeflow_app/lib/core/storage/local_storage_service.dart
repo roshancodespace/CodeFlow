@@ -18,6 +18,9 @@ class LocalStorageService {
   static const String _keyFocusDelay = 'codeflow_focus_delay';
   static const String _keyNewlinePause = 'codeflow_newline_pause';
   static const String _keyHumanJitter = 'codeflow_human_jitter';
+  static const String _keyHumanMistakes = 'codeflow_human_mistakes';
+  static const String _keyMistakeProbability = 'codeflow_mistake_probability';
+  static const String _keyThinkingPauses = 'codeflow_thinking_pauses';
   static const String _keyProjects = 'codeflow_projects_list';
   static const String _keyCheckpointsPrefix = 'codeflow_checkpoint_';
   static const String _keyAutomationMode = 'codeflow_automation_mode';
@@ -25,11 +28,19 @@ class LocalStorageService {
   static const String _keyPostRunCommand = 'codeflow_post_run_command';
 
   // --- Automation & Spoofer Preferences ---
-  String get automationMode => _prefs.getString(_keyAutomationMode) ?? 'hidHumanTyping';
+  String get automationMode {
+    final mode = _prefs.getString(_keyAutomationMode);
+    if (mode == null || mode == 'hidHumanTyping') {
+      return 'vscodeEditor';
+    }
+    return mode;
+  }
+
   Future<void> setAutomationMode(String mode) async =>
       _prefs.setString(_keyAutomationMode, mode);
 
-  String get spooferProfile => _prefs.getString(_keySpooferProfile) ?? 'Logitech MX Keys';
+  String get spooferProfile =>
+      _prefs.getString(_keySpooferProfile) ?? 'Logitech MX Keys';
   Future<void> setSpooferProfile(String profile) async =>
       _prefs.setString(_keySpooferProfile, profile);
 
@@ -61,8 +72,8 @@ class LocalStorageService {
     }
   }
 
-  // --- Typing Cadence Preferences ---
-  int get typingSpeedCps => _prefs.getInt(_keyTypingSpeed) ?? 35;
+  // --- Typing Cadence & Humanization Preferences ---
+  int get typingSpeedCps => _prefs.getInt(_keyTypingSpeed) ?? 6;
   Future<void> setTypingSpeedCps(int cps) async =>
       _prefs.setInt(_keyTypingSpeed, cps);
 
@@ -70,13 +81,26 @@ class LocalStorageService {
   Future<void> setFocusDelaySeconds(int seconds) async =>
       _prefs.setInt(_keyFocusDelay, seconds);
 
-  int get newlinePauseMs => _prefs.getInt(_keyNewlinePause) ?? 150;
+  int get newlinePauseMs => _prefs.getInt(_keyNewlinePause) ?? 350;
   Future<void> setNewlinePauseMs(int ms) async =>
       _prefs.setInt(_keyNewlinePause, ms);
 
   bool get humanJitterEnabled => _prefs.getBool(_keyHumanJitter) ?? true;
   Future<void> setHumanJitterEnabled(bool enabled) async =>
       _prefs.setBool(_keyHumanJitter, enabled);
+
+  bool get humanMistakesEnabled => _prefs.getBool(_keyHumanMistakes) ?? true;
+  Future<void> setHumanMistakesEnabled(bool enabled) async =>
+      _prefs.setBool(_keyHumanMistakes, enabled);
+
+  int get mistakeProbabilityPercent =>
+      _prefs.getInt(_keyMistakeProbability) ?? 3;
+  Future<void> setMistakeProbabilityPercent(int prob) async =>
+      _prefs.setInt(_keyMistakeProbability, prob);
+
+  bool get thinkingPausesEnabled => _prefs.getBool(_keyThinkingPauses) ?? true;
+  Future<void> setThinkingPausesEnabled(bool enabled) async =>
+      _prefs.setBool(_keyThinkingPauses, enabled);
 
   // --- Projects Persistence ---
   List<Project> getProjects() {
@@ -131,7 +155,9 @@ class LocalStorageService {
   Future<void> saveCheckpoint(WorkflowCheckpoint checkpoint) async {
     final raw = jsonEncode(checkpoint.toJson());
     await _prefs.setString(
-        '$_keyCheckpointsPrefix${checkpoint.projectId}', raw);
+      '$_keyCheckpointsPrefix${checkpoint.projectId}',
+      raw,
+    );
   }
 
   Future<void> deleteCheckpoint(String projectId) async {

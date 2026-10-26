@@ -10,7 +10,8 @@ class ScreenMonitorScreen extends ConsumerStatefulWidget {
   const ScreenMonitorScreen({super.key});
 
   @override
-  ConsumerState<ScreenMonitorScreen> createState() => _ScreenMonitorScreenState();
+  ConsumerState<ScreenMonitorScreen> createState() =>
+      _ScreenMonitorScreenState();
 }
 
 class _ScreenMonitorScreenState extends ConsumerState<ScreenMonitorScreen> {
@@ -27,13 +28,20 @@ class _ScreenMonitorScreenState extends ConsumerState<ScreenMonitorScreen> {
   void _showConnectionDialog(BuildContext context) {
     final storage = ref.read(localStorageProvider);
     final hostController = TextEditingController(text: storage.companionHost);
-    final portController = TextEditingController(text: storage.companionPort.toString());
-    final tokenController = TextEditingController(text: storage.companionToken ?? '');
+    final portController = TextEditingController(
+      text: storage.companionPort.toString(),
+    );
+    final tokenController = TextEditingController(
+      text: storage.companionToken ?? '',
+    );
 
     showDialog(
       context: context,
       builder: (ctx) => AlertDialog(
-        title: const Text('Companion Stream Settings', style: TextStyle(fontSize: 16)),
+        title: const Text(
+          'Companion Stream Settings',
+          style: TextStyle(fontSize: 16),
+        ),
         content: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
@@ -99,9 +107,9 @@ class _ScreenMonitorScreenState extends ConsumerState<ScreenMonitorScreen> {
       _commandController.clear();
     } catch (e) {
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Error typing command: $e')),
-        );
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text('Error typing command: $e')));
       }
     } finally {
       if (mounted) {
@@ -113,7 +121,9 @@ class _ScreenMonitorScreenState extends ConsumerState<ScreenMonitorScreen> {
   @override
   Widget build(BuildContext context) {
     final isDark = Theme.of(context).brightness == Brightness.dark;
-    final surfaceColor = isDark ? AppColors.darkSurface : AppColors.lightSurface;
+    final surfaceColor = isDark
+        ? AppColors.darkSurface
+        : AppColors.lightSurface;
     final borderColor = isDark ? AppColors.darkBorder : AppColors.lightBorder;
 
     final storage = ref.watch(localStorageProvider);
@@ -124,7 +134,8 @@ class _ScreenMonitorScreenState extends ConsumerState<ScreenMonitorScreen> {
     final orchState = orchestrator.state;
     final selectedProject = ref.watch(selectedProjectProvider);
 
-    final isHostMac = (companionState.info?.os ?? '').toLowerCase().contains('darwin') ||
+    final isHostMac =
+        (companionState.info?.os ?? '').toLowerCase().contains('darwin') ||
         (companionState.info?.os ?? '').toLowerCase().contains('mac');
 
     return Scaffold(
@@ -137,7 +148,8 @@ class _ScreenMonitorScreenState extends ConsumerState<ScreenMonitorScreen> {
               size: 20,
             ),
             tooltip: 'Toggle Remote Control Bar',
-            onPressed: () => setState(() => _controlsExpanded = !_controlsExpanded),
+            onPressed: () =>
+                setState(() => _controlsExpanded = !_controlsExpanded),
           ),
           IconButton(
             icon: const Icon(Icons.tune, size: 20),
@@ -153,7 +165,10 @@ class _ScreenMonitorScreenState extends ConsumerState<ScreenMonitorScreen> {
             if (companionState.isConnected && companionState.info != null)
               Container(
                 margin: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 12,
+                  vertical: 8,
+                ),
                 decoration: BoxDecoration(
                   color: surfaceColor,
                   border: Border.all(color: borderColor),
@@ -161,13 +176,20 @@ class _ScreenMonitorScreenState extends ConsumerState<ScreenMonitorScreen> {
                 ),
                 child: Row(
                   children: [
-                    const Icon(Icons.laptop, size: 16, color: AppColors.accentLight),
+                    const Icon(
+                      Icons.laptop,
+                      size: 16,
+                      color: AppColors.accentLight,
+                    ),
                     const SizedBox(width: 8),
                     Expanded(
                       child: Text(
                         '${companionState.info!.hostname} (${companionState.info!.os})'
                         '${companionState.info!.activeWindow != null ? " • ${companionState.info!.activeWindow}" : ""}',
-                        style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w500),
+                        style: const TextStyle(
+                          fontSize: 11,
+                          fontWeight: FontWeight.w500,
+                        ),
                         maxLines: 1,
                         overflow: TextOverflow.ellipsis,
                       ),
@@ -186,7 +208,9 @@ class _ScreenMonitorScreenState extends ConsumerState<ScreenMonitorScreen> {
                           final firstHost = hidService.pairedDevices.first;
                           ScaffoldMessenger.of(context).showSnackBar(
                             SnackBar(
-                              content: Text('Connecting HID to ${firstHost.name}...'),
+                              content: Text(
+                                'Connecting HID to ${firstHost.name}...',
+                              ),
                             ),
                           );
                           await hidService.connectHost(firstHost.address);
@@ -196,20 +220,23 @@ class _ScreenMonitorScreenState extends ConsumerState<ScreenMonitorScreen> {
                       },
                       borderRadius: BorderRadius.circular(4),
                       child: Container(
-                        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 8,
+                          vertical: 3,
+                        ),
                         decoration: BoxDecoration(
                           color: hidService.connectedHost != null
                               ? AppColors.statusSuccess.withAlpha(25)
                               : hidService.pairedDevices.isNotEmpty
-                                  ? AppColors.statusWarning.withAlpha(35)
-                                  : AppColors.lightBorder.withAlpha(80),
+                              ? AppColors.statusWarning.withAlpha(35)
+                              : AppColors.lightBorder.withAlpha(80),
                           borderRadius: BorderRadius.circular(4),
                           border: Border.all(
                             color: hidService.connectedHost != null
                                 ? AppColors.statusSuccess.withAlpha(80)
                                 : hidService.pairedDevices.isNotEmpty
-                                    ? AppColors.statusWarning.withAlpha(120)
-                                    : AppColors.lightBorder,
+                                ? AppColors.statusWarning.withAlpha(120)
+                                : AppColors.lightBorder,
                             width: 1,
                           ),
                         ),
@@ -222,26 +249,27 @@ class _ScreenMonitorScreenState extends ConsumerState<ScreenMonitorScreen> {
                               color: hidService.connectedHost != null
                                   ? AppColors.statusSuccess
                                   : hidService.pairedDevices.isNotEmpty
-                                      ? AppColors.statusWarning
-                                      : AppColors.lightTextMuted,
+                                  ? AppColors.statusWarning
+                                  : AppColors.lightTextMuted,
                             ),
                             const SizedBox(width: 5),
                             Text(
                               hidService.connectedHost != null
                                   ? 'Keyboard: ${hidService.connectedHost!.name}'
-                                  : hidService.currentStatus == HidConnectionStatus.connecting
-                                      ? 'Connecting HID...'
-                                      : hidService.pairedDevices.isNotEmpty
-                                          ? 'Paired: ${hidService.pairedDevices.first.name} (Tap)'
-                                          : 'No Host Paired (Tap)',
+                                  : hidService.currentStatus ==
+                                        HidConnectionStatus.connecting
+                                  ? 'Connecting HID...'
+                                  : hidService.pairedDevices.isNotEmpty
+                                  ? 'Paired: ${hidService.pairedDevices.first.name} (Tap)'
+                                  : 'No Host Paired (Tap)',
                               style: TextStyle(
                                 fontSize: 10,
                                 fontWeight: FontWeight.w600,
                                 color: hidService.connectedHost != null
                                     ? AppColors.statusSuccess
                                     : hidService.pairedDevices.isNotEmpty
-                                        ? AppColors.statusWarning
-                                        : AppColors.lightTextMuted,
+                                    ? AppColors.statusWarning
+                                    : AppColors.lightTextMuted,
                               ),
                             ),
                           ],
@@ -286,7 +314,10 @@ class _ScreenMonitorScreenState extends ConsumerState<ScreenMonitorScreen> {
                     Expanded(
                       child: Text(
                         orchState.currentOperation,
-                        style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w600),
+                        style: const TextStyle(
+                          fontSize: 12,
+                          fontWeight: FontWeight.w600,
+                        ),
                         maxLines: 1,
                         overflow: TextOverflow.ellipsis,
                       ),
@@ -297,7 +328,11 @@ class _ScreenMonitorScreenState extends ConsumerState<ScreenMonitorScreen> {
                       onPressed: () => orchestrator.pause(),
                     ),
                     IconButton(
-                      icon: const Icon(Icons.cancel, size: 18, color: AppColors.statusError),
+                      icon: const Icon(
+                        Icons.cancel,
+                        size: 18,
+                        color: AppColors.statusError,
+                      ),
                       tooltip: 'Cancel',
                       onPressed: () => orchestrator.cancel(),
                     ),
@@ -308,7 +343,10 @@ class _ScreenMonitorScreenState extends ConsumerState<ScreenMonitorScreen> {
             // Interactive Remote Keyboard Controls Bar
             if (_controlsExpanded)
               Container(
-                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 12,
+                  vertical: 8,
+                ),
                 decoration: BoxDecoration(
                   color: surfaceColor,
                   border: Border(top: BorderSide(color: borderColor)),
@@ -372,15 +410,29 @@ class _ScreenMonitorScreenState extends ConsumerState<ScreenMonitorScreen> {
                           const SizedBox(width: 6),
                           if (selectedProject != null)
                             ActionChip(
-                              avatar: const Icon(Icons.play_arrow, size: 14, color: AppColors.accentLight),
+                              avatar: const Icon(
+                                Icons.play_arrow,
+                                size: 14,
+                                color: AppColors.accentLight,
+                              ),
                               label: Text('Type: ${selectedProject.name}'),
-                              onPressed: () => orchestrator.runWorkflow(project: selectedProject),
+                              onPressed: () => orchestrator.runWorkflow(
+                                project: selectedProject,
+                              ),
                             ),
                           const SizedBox(width: 6),
                           ActionChip(
-                            avatar: const Icon(Icons.warning, size: 14, color: AppColors.statusError),
-                            label: const Text('PANIC', style: TextStyle(color: AppColors.statusError)),
-                            onPressed: () => orchestrator.emergencyPanicRelease(),
+                            avatar: const Icon(
+                              Icons.warning,
+                              size: 14,
+                              color: AppColors.statusError,
+                            ),
+                            label: const Text(
+                              'PANIC',
+                              style: TextStyle(color: AppColors.statusError),
+                            ),
+                            onPressed: () =>
+                                orchestrator.emergencyPanicRelease(),
                           ),
                         ],
                       ),
@@ -394,21 +446,30 @@ class _ScreenMonitorScreenState extends ConsumerState<ScreenMonitorScreen> {
                           child: TextField(
                             controller: _commandController,
                             decoration: const InputDecoration(
-                              hintText: 'Type command or text to inject on PC...',
+                              hintText:
+                                  'Type command or text to inject on PC...',
                               isDense: true,
-                              contentPadding: EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+                              contentPadding: EdgeInsets.symmetric(
+                                horizontal: 10,
+                                vertical: 8,
+                              ),
                             ),
                             onSubmitted: (_) => _sendQuickCommand(),
                           ),
                         ),
                         const SizedBox(width: 8),
                         FilledButton(
-                          onPressed: _isTypingCommand ? null : _sendQuickCommand,
+                          onPressed: _isTypingCommand
+                              ? null
+                              : _sendQuickCommand,
                           child: _isTypingCommand
                               ? const SizedBox(
                                   width: 14,
                                   height: 14,
-                                  child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white),
+                                  child: CircularProgressIndicator(
+                                    strokeWidth: 2,
+                                    color: Colors.white,
+                                  ),
                                 )
                               : const Text('Type to PC'),
                         ),

@@ -5,7 +5,7 @@ import 'package:flutter/material.dart';
 class AppColors {
   // Brand Accent (Single restrained blue)
   static const Color accentLight = Color(0xFF2563EB); // Royal Blue
-  static const Color accentDark = Color(0xFF3B82F6);  // Bright Slate Blue
+  static const Color accentDark = Color(0xFF3B82F6); // Bright Slate Blue
   static const Color accentHover = Color(0xFF1D4ED8);
 
   // Light Theme Palette (White-First)

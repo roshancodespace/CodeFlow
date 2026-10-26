@@ -214,5 +214,53 @@ void main() {
       expect(typedCount, lessThan(longSnippet.length));
       expect(fakeHid.emergencyReleaseCount, greaterThanOrEqualTo(1));
     });
+
+    test(
+      'CadenceConfig default values reflect real human developer typing',
+      () {
+        const defaultConfig = CadenceConfig();
+        expect(defaultConfig.targetCps, equals(6));
+        expect(defaultConfig.humanMistakesEnabled, isTrue);
+        expect(defaultConfig.mistakeProbabilityPercent, equals(3));
+        expect(defaultConfig.thinkingPausesEnabled, isTrue);
+        expect(defaultConfig.deterministicTestMode, isFalse);
+      },
+    );
+
+    test(
+      'generates adjacent typo, backspace, and correct character when mistakes enabled',
+      () async {
+        final mistakeHid = FakeBluetoothHidService();
+        final mistakeEngine = TypingCadenceEngine(
+          hidService: mistakeHid,
+          config: const CadenceConfig(
+            targetCps: 60,
+            humanJitterEnabled: false,
+            humanMistakesEnabled: true,
+            mistakeProbabilityPercent: 100, // force mistake on every char
+            thinkingPausesEnabled: false,
+            deterministicTestMode: false,
+          ),
+        );
+
+        // Type a single alphanumeric character 'e'
+        final offset = await mistakeEngine.typeContent(
+          content: 'e',
+          fileName: 'test.dart',
+        );
+
+        expect(offset, equals(1));
+        // First typed character was wrong key, last typed character is the correct key 'e'
+        expect(mistakeHid.typedCharacters.length, greaterThanOrEqualTo(2));
+        expect(mistakeHid.typedCharacters.last, equals('e'));
+        // Backspace was sent to fix the mistake
+        final backspaceSent = mistakeHid.sentReports.any(
+          (r) => r.length >= 3 && r[2] == HidScancodes.backspace,
+        );
+        expect(backspaceSent, isTrue);
+
+        mistakeEngine.dispose();
+      },
+    );
   });
 }

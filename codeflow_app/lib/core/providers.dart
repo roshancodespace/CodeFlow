@@ -48,8 +48,9 @@ class ThemeModeNotifier extends StateNotifier<ThemeMode> {
   }
 }
 
-final themeModeProvider =
-    StateNotifierProvider<ThemeModeNotifier, ThemeMode>((ref) {
+final themeModeProvider = StateNotifierProvider<ThemeModeNotifier, ThemeMode>((
+  ref,
+) {
   final storage = ref.watch(localStorageProvider);
   return ThemeModeNotifier(storage);
 });
@@ -88,6 +89,9 @@ final cadenceEngineProvider = Provider<TypingCadenceEngine>((ref) {
       focusDelaySeconds: storage.focusDelaySeconds,
       newlinePauseMs: storage.newlinePauseMs,
       humanJitterEnabled: storage.humanJitterEnabled,
+      humanMistakesEnabled: storage.humanMistakesEnabled,
+      mistakeProbabilityPercent: storage.mistakeProbabilityPercent,
+      thinkingPausesEnabled: storage.thinkingPausesEnabled,
     ),
   );
   ref.onDispose(() => engine.dispose());
@@ -132,18 +136,20 @@ class ProjectsNotifier extends StateNotifier<List<Project>> {
   }
 }
 
-final projectsProvider =
-    StateNotifierProvider<ProjectsNotifier, List<Project>>((ref) {
-  final storage = ref.watch(localStorageProvider);
-  final manager = ref.watch(projectManagerProvider);
-  return ProjectsNotifier(storage, manager);
-});
+final projectsProvider = StateNotifierProvider<ProjectsNotifier, List<Project>>(
+  (ref) {
+    final storage = ref.watch(localStorageProvider);
+    final manager = ref.watch(projectManagerProvider);
+    return ProjectsNotifier(storage, manager);
+  },
+);
 
 final selectedProjectProvider = StateProvider<Project?>((ref) => null);
 
 // --- Orchestrator Provider ---
-final orchestratorProvider =
-    ChangeNotifierProvider<OrchestratorController>((ref) {
+final orchestratorProvider = ChangeNotifierProvider<OrchestratorController>((
+  ref,
+) {
   final hid = ref.watch(hidServiceProvider);
   final api = ref.watch(companionApiProvider);
   final transfer = ref.watch(fileTransferServiceProvider);
@@ -198,7 +204,7 @@ class CompanionStatusNotifier extends StateNotifier<CompanionStatusState> {
   final CompanionDiscoveryService _discovery;
 
   CompanionStatusNotifier(this._api, this._storage, this._discovery)
-      : super(const CompanionStatusState()) {
+    : super(const CompanionStatusState()) {
     checkConnection();
   }
 
@@ -237,8 +243,15 @@ class CompanionStatusNotifier extends StateNotifier<CompanionStatusState> {
             .timeout(const Duration(seconds: 3));
         await _storage.setCompanionHost(comp.host);
         await _storage.setCompanionPort(comp.port);
-        final info = await _api.getInfo(host: comp.host, port: comp.port, token: token);
-        final ping = await _api.measurePingLatency(host: comp.host, port: comp.port);
+        final info = await _api.getInfo(
+          host: comp.host,
+          port: comp.port,
+          token: token,
+        );
+        final ping = await _api.measurePingLatency(
+          host: comp.host,
+          port: comp.port,
+        );
         state = CompanionStatusState(
           isConnected: true,
           isSearching: false,
@@ -261,8 +274,8 @@ class CompanionStatusNotifier extends StateNotifier<CompanionStatusState> {
 
 final companionStatusProvider =
     StateNotifierProvider<CompanionStatusNotifier, CompanionStatusState>((ref) {
-  final api = ref.watch(companionApiProvider);
-  final storage = ref.watch(localStorageProvider);
-  final discovery = ref.watch(discoveryServiceProvider);
-  return CompanionStatusNotifier(api, storage, discovery);
-});
+      final api = ref.watch(companionApiProvider);
+      final storage = ref.watch(localStorageProvider);
+      final discovery = ref.watch(discoveryServiceProvider);
+      return CompanionStatusNotifier(api, storage, discovery);
+    });

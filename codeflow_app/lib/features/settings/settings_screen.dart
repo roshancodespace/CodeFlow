@@ -36,9 +36,7 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen>
     _tokenController = TextEditingController(
       text: storage.companionToken ?? '',
     );
-    _postRunController = TextEditingController(
-      text: storage.postRunCommand,
-    );
+    _postRunController = TextEditingController(text: storage.postRunCommand);
     WidgetsBinding.instance.addPostFrameCallback((_) {
       ref.read(hidServiceProvider).refreshState();
     });
@@ -86,7 +84,9 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen>
                   ? 'Registered as "$profile" and discoverable! Open PC Bluetooth Settings and pair.'
                   : 'HID registration returned false. Please check Bluetooth permissions.',
             ),
-            backgroundColor: ok ? AppColors.statusSuccess : AppColors.statusWarning,
+            backgroundColor: ok
+                ? AppColors.statusSuccess
+                : AppColors.statusWarning,
             duration: const Duration(seconds: 4),
           ),
         );
@@ -365,16 +365,51 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen>
                         RadioListTile<String>(
                           dense: true,
                           contentPadding: EdgeInsets.zero,
-                          title: Text('Real Human Bluetooth HID Typing (Default)', style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600)),
-                          subtitle: Text('Emulates genuine physical keyboard. Automatically opens terminal (Ctrl+~), types shell injection command, types code with human jitter & pauses, and triggers save (Ctrl+S).', style: TextStyle(fontSize: 11)),
-                          value: 'hidHumanTyping',
+                          title: Text(
+                            'VS Code Real Developer (In-Editor Shortcuts & Typing) [Default]',
+                            style: TextStyle(
+                              fontSize: 13,
+                              fontWeight: FontWeight.w600,
+                            ),
+                          ),
+                          subtitle: Text(
+                            'Uses VS Code shortcuts: Ctrl+P Quick Open to select files, focuses editor tab, clears buffer (Ctrl+A -> Backspace), types code with human typos, backspaces & cadence, and saves (Ctrl+S).',
+                            style: TextStyle(fontSize: 11),
+                          ),
+                          value: 'vscodeEditor',
                         ),
                         Divider(height: 16),
                         RadioListTile<String>(
                           dense: true,
                           contentPadding: EdgeInsets.zero,
-                          title: Text('Direct Network Sync (Instant Companion API)', style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600)),
-                          subtitle: Text('Writes files directly to disk over local companion HTTP connection. Bypasses keystroke typing.', style: TextStyle(fontSize: 11)),
+                          title: Text(
+                            'Terminal Shell Script Injection (CLI cat/PowerShell)',
+                            style: TextStyle(
+                              fontSize: 13,
+                              fontWeight: FontWeight.w600,
+                            ),
+                          ),
+                          subtitle: Text(
+                            'Opens terminal (Ctrl+~) and injects file content using cat heredoc or PowerShell Set-Content.',
+                            style: TextStyle(fontSize: 11),
+                          ),
+                          value: 'hidTerminalShell',
+                        ),
+                        Divider(height: 16),
+                        RadioListTile<String>(
+                          dense: true,
+                          contentPadding: EdgeInsets.zero,
+                          title: Text(
+                            'Direct Network Sync (Instant Companion API)',
+                            style: TextStyle(
+                              fontSize: 13,
+                              fontWeight: FontWeight.w600,
+                            ),
+                          ),
+                          subtitle: Text(
+                            'Writes files directly to disk over local companion HTTP connection. Bypasses keystroke typing.',
+                            style: TextStyle(fontSize: 11),
+                          ),
                           value: 'directNetwork',
                         ),
                       ],
@@ -388,7 +423,8 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen>
                           controller: _postRunController,
                           decoration: const InputDecoration(
                             labelText: 'Post-Run Terminal Command (Optional)',
-                            hintText: 'e.g. npm test, python main.py, or cargo run',
+                            hintText:
+                                'e.g. npm test, python main.py, or cargo run',
                             isDense: true,
                           ),
                         ),
@@ -396,16 +432,223 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen>
                       const SizedBox(width: 8),
                       FilledButton(
                         onPressed: () async {
-                          await storage.setPostRunCommand(_postRunController.text);
+                          await storage.setPostRunCommand(
+                            _postRunController.text,
+                          );
                           if (context.mounted) {
                             ScaffoldMessenger.of(context).showSnackBar(
-                              const SnackBar(content: Text('Post-run command saved.')),
+                              const SnackBar(
+                                content: Text('Post-run command saved.'),
+                              ),
                             );
                           }
                         },
                         child: const Text('Save'),
                       ),
                     ],
+                  ),
+                ],
+              ),
+            ),
+
+            const SizedBox(height: 20),
+
+            // Humanized Typing & Mistake Engine Preferences
+            _buildSectionHeader('Humanized Typing & Mistakes Engine'),
+            Container(
+              padding: const EdgeInsets.all(14),
+              decoration: BoxDecoration(
+                color: surfaceColor,
+                border: Border.all(color: borderColor),
+                borderRadius: BorderRadius.circular(6),
+              ),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  // Human Typing Speed (CPS / WPM)
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    children: [
+                      const Text(
+                        'Human Typing Speed',
+                        style: TextStyle(
+                          fontSize: 12,
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
+                      Text(
+                        '${storage.typingSpeedCps} CPS (~${(storage.typingSpeedCps * 12).round()} WPM)',
+                        style: const TextStyle(
+                          fontSize: 12,
+                          fontWeight: FontWeight.w600,
+                          fontFamily: 'monospace',
+                        ),
+                      ),
+                    ],
+                  ),
+                  Slider(
+                    value: storage.typingSpeedCps.toDouble().clamp(2.0, 30.0),
+                    min: 2,
+                    max: 30,
+                    divisions: 28,
+                    onChanged: (val) {
+                      storage.setTypingSpeedCps(val.round());
+                      setState(() {});
+                    },
+                  ),
+
+                  // Human Mistakes & Auto-Corrections Switch
+                  SwitchListTile(
+                    dense: true,
+                    contentPadding: EdgeInsets.zero,
+                    title: const Text(
+                      'Human Mistakes & Auto-Corrections',
+                      style: TextStyle(
+                        fontSize: 12,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                    subtitle: const Text(
+                      'Randomized typos on adjacent QWERTY keys with realistic human reaction delay and backspace fixes',
+                      style: TextStyle(fontSize: 11),
+                    ),
+                    value: storage.humanMistakesEnabled,
+                    onChanged: (val) {
+                      storage.setHumanMistakesEnabled(val);
+                      setState(() {});
+                    },
+                  ),
+
+                  if (storage.humanMistakesEnabled) ...[
+                    Row(
+                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                      children: [
+                        const Text(
+                          'Typo Mistake Frequency',
+                          style: TextStyle(fontSize: 11),
+                        ),
+                        Text(
+                          '${storage.mistakeProbabilityPercent}% of keys',
+                          style: const TextStyle(
+                            fontSize: 11,
+                            fontWeight: FontWeight.w600,
+                            fontFamily: 'monospace',
+                          ),
+                        ),
+                      ],
+                    ),
+                    Slider(
+                      value: storage.mistakeProbabilityPercent.toDouble().clamp(
+                        1.0,
+                        10.0,
+                      ),
+                      min: 1,
+                      max: 10,
+                      divisions: 9,
+                      onChanged: (val) {
+                        storage.setMistakeProbabilityPercent(val.round());
+                        setState(() {});
+                      },
+                    ),
+                  ],
+
+                  // Syntax & Thought Pauses Switch
+                  SwitchListTile(
+                    dense: true,
+                    contentPadding: EdgeInsets.zero,
+                    title: const Text(
+                      'Developer Syntax & Thought Pauses',
+                      style: TextStyle(
+                        fontSize: 12,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                    subtitle: const Text(
+                      'Natural human hesitation at newlines, semicolons, brackets, and code intervals',
+                      style: TextStyle(fontSize: 11),
+                    ),
+                    value: storage.thinkingPausesEnabled,
+                    onChanged: (val) {
+                      storage.setThinkingPausesEnabled(val);
+                      setState(() {});
+                    },
+                  ),
+
+                  // Focus Countdown
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    children: [
+                      const Text(
+                        'Focus Window Countdown Delay',
+                        style: TextStyle(fontSize: 12),
+                      ),
+                      Text(
+                        '${storage.focusDelaySeconds}s',
+                        style: const TextStyle(
+                          fontSize: 12,
+                          fontWeight: FontWeight.w600,
+                          fontFamily: 'monospace',
+                        ),
+                      ),
+                    ],
+                  ),
+                  Slider(
+                    value: storage.focusDelaySeconds.toDouble(),
+                    min: 1,
+                    max: 10,
+                    divisions: 9,
+                    onChanged: (val) {
+                      storage.setFocusDelaySeconds(val.round());
+                      setState(() {});
+                    },
+                  ),
+
+                  // Newline Pause Slider
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    children: [
+                      const Text(
+                        'Newline Formatter Catch-up Pause',
+                        style: TextStyle(fontSize: 12),
+                      ),
+                      Text(
+                        '${storage.newlinePauseMs}ms',
+                        style: const TextStyle(
+                          fontSize: 12,
+                          fontWeight: FontWeight.w600,
+                          fontFamily: 'monospace',
+                        ),
+                      ),
+                    ],
+                  ),
+                  Slider(
+                    value: storage.newlinePauseMs.toDouble().clamp(50.0, 800.0),
+                    min: 50,
+                    max: 800,
+                    divisions: 15,
+                    onChanged: (val) {
+                      storage.setNewlinePauseMs(val.round());
+                      setState(() {});
+                    },
+                  ),
+
+                  // Gaussian Jitter Switch
+                  SwitchListTile(
+                    dense: true,
+                    contentPadding: EdgeInsets.zero,
+                    title: const Text(
+                      'Box-Muller Gaussian Jitter',
+                      style: TextStyle(fontSize: 12),
+                    ),
+                    subtitle: const Text(
+                      'Mathematical micro-variance to mimic realistic human neuromuscular latency',
+                      style: TextStyle(fontSize: 11),
+                    ),
+                    value: storage.humanJitterEnabled,
+                    onChanged: (val) {
+                      storage.setHumanJitterEnabled(val);
+                      setState(() {});
+                    },
                   ),
                 ],
               ),
@@ -498,7 +741,9 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen>
                                 ? 'Registering...'
                                 : '1-Tap Register & Discover (300s)',
                           ),
-                          onPressed: _isRegisteringHid ? null : _registerHidWithSpoofer,
+                          onPressed: _isRegisteringHid
+                              ? null
+                              : _registerHidWithSpoofer,
                         ),
                       ),
                     ],
@@ -545,10 +790,19 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen>
                           ),
                           const SizedBox(width: 8),
                           TextButton.icon(
-                            icon: const Icon(Icons.settings_bluetooth, size: 14),
-                            label: const Text('Bluetooth Settings', style: TextStyle(fontSize: 11)),
+                            icon: const Icon(
+                              Icons.settings_bluetooth,
+                              size: 14,
+                            ),
+                            label: const Text(
+                              'Bluetooth Settings',
+                              style: TextStyle(fontSize: 11),
+                            ),
                             style: TextButton.styleFrom(
-                              padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 4),
+                              padding: const EdgeInsets.symmetric(
+                                horizontal: 6,
+                                vertical: 4,
+                              ),
                               minimumSize: Size.zero,
                               tapTargetSize: MaterialTapTargetSize.shrinkWrap,
                             ),
@@ -564,7 +818,9 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen>
                       width: double.infinity,
                       padding: const EdgeInsets.all(12),
                       decoration: BoxDecoration(
-                        color: isDark ? AppColors.darkBackground : AppColors.lightBackground,
+                        color: isDark
+                            ? AppColors.darkBackground
+                            : AppColors.lightBackground,
                         borderRadius: BorderRadius.circular(6),
                         border: Border.all(color: borderColor),
                       ),
@@ -573,26 +829,39 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen>
                         children: [
                           Row(
                             children: const [
-                              Icon(Icons.bluetooth_searching, size: 16, color: AppColors.accentLight),
+                              Icon(
+                                Icons.bluetooth_searching,
+                                size: 16,
+                                color: AppColors.accentLight,
+                              ),
                               SizedBox(width: 8),
                               Text(
                                 'No Paired PC Hosts Found Yet',
-                                style: TextStyle(fontSize: 12, fontWeight: FontWeight.w600),
+                                style: TextStyle(
+                                  fontSize: 12,
+                                  fontWeight: FontWeight.w600,
+                                ),
                               ),
                             ],
                           ),
                           const SizedBox(height: 6),
                           const Text(
                             '1. Tap "1-Tap Register & Discover" above.\n2. On your PC, open Bluetooth Settings.\n3. Add Bluetooth device and select the advertised keyboard name.\n4. Once paired, it will appear here automatically!',
-                            style: TextStyle(fontSize: 11, color: AppColors.lightTextMuted, height: 1.4),
+                            style: TextStyle(
+                              fontSize: 11,
+                              color: AppColors.lightTextMuted,
+                              height: 1.4,
+                            ),
                           ),
                         ],
                       ),
                     )
                   else
                     ...hid.pairedDevices.map((dev) {
-                      final isConnected = hid.connectedHost?.address == dev.address;
-                      final isThisConnecting = _connectingAddress == dev.address &&
+                      final isConnected =
+                          hid.connectedHost?.address == dev.address;
+                      final isThisConnecting =
+                          _connectingAddress == dev.address &&
                           hid.currentStatus == HidConnectionStatus.connecting;
 
                       return ListTile(
@@ -604,31 +873,35 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen>
                           color: isConnected
                               ? AppColors.statusSuccess
                               : isThisConnecting
-                                  ? AppColors.statusWarning
-                                  : AppColors.lightTextMuted,
+                              ? AppColors.statusWarning
+                              : AppColors.lightTextMuted,
                         ),
                         title: Text(
                           dev.name,
                           style: TextStyle(
                             fontSize: 13,
-                            fontWeight: isConnected ? FontWeight.w700 : FontWeight.w500,
+                            fontWeight: isConnected
+                                ? FontWeight.w700
+                                : FontWeight.w500,
                           ),
                         ),
                         subtitle: Text(
                           isConnected
                               ? '${dev.address} • KEYBOARD ACTIVE'
                               : isThisConnecting
-                                  ? '${dev.address} • CONNECTING...'
-                                  : '${dev.address} • PAIRED',
+                              ? '${dev.address} • CONNECTING...'
+                              : '${dev.address} • PAIRED',
                           style: TextStyle(
                             fontSize: 11,
                             fontFamily: 'monospace',
-                            fontWeight: isConnected ? FontWeight.w600 : FontWeight.normal,
+                            fontWeight: isConnected
+                                ? FontWeight.w600
+                                : FontWeight.normal,
                             color: isConnected
                                 ? AppColors.statusSuccess
                                 : isThisConnecting
-                                    ? AppColors.statusWarning
-                                    : AppColors.lightTextMuted,
+                                ? AppColors.statusWarning
+                                : AppColors.lightTextMuted,
                           ),
                         ),
                         trailing: isConnected
@@ -638,27 +911,45 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen>
                                   if (context.mounted) {
                                     ScaffoldMessenger.of(context).showSnackBar(
                                       SnackBar(
-                                        content: Text('Disconnected from ${dev.name}'),
+                                        content: Text(
+                                          'Disconnected from ${dev.name}',
+                                        ),
                                       ),
                                     );
                                   }
                                 },
                                 style: OutlinedButton.styleFrom(
-                                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                                  padding: const EdgeInsets.symmetric(
+                                    horizontal: 10,
+                                    vertical: 4,
+                                  ),
                                   minimumSize: Size.zero,
-                                  tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                                  tapTargetSize:
+                                      MaterialTapTargetSize.shrinkWrap,
                                 ),
-                                child: const Text('Disconnect', style: TextStyle(fontSize: 12)),
+                                child: const Text(
+                                  'Disconnect',
+                                  style: TextStyle(fontSize: 12),
+                                ),
                               )
                             : FilledButton.tonal(
                                 onPressed: isThisConnecting
                                     ? null
                                     : () async {
-                                        setState(() => _connectingAddress = dev.address);
-                                        final ok = await hid.connectHost(dev.address);
+                                        setState(
+                                          () =>
+                                              _connectingAddress = dev.address,
+                                        );
+                                        final ok = await hid.connectHost(
+                                          dev.address,
+                                        );
                                         if (context.mounted) {
-                                          setState(() => _connectingAddress = null);
-                                          ScaffoldMessenger.of(context).showSnackBar(
+                                          setState(
+                                            () => _connectingAddress = null,
+                                          );
+                                          ScaffoldMessenger.of(
+                                            context,
+                                          ).showSnackBar(
                                             SnackBar(
                                               content: Text(
                                                 ok
@@ -670,17 +961,26 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen>
                                         }
                                       },
                                 style: FilledButton.styleFrom(
-                                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                                  padding: const EdgeInsets.symmetric(
+                                    horizontal: 10,
+                                    vertical: 4,
+                                  ),
                                   minimumSize: Size.zero,
-                                  tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                                  tapTargetSize:
+                                      MaterialTapTargetSize.shrinkWrap,
                                 ),
                                 child: isThisConnecting
                                     ? const SizedBox(
                                         width: 14,
                                         height: 14,
-                                        child: CircularProgressIndicator(strokeWidth: 2),
+                                        child: CircularProgressIndicator(
+                                          strokeWidth: 2,
+                                        ),
                                       )
-                                    : const Text('Connect Keyboard', style: TextStyle(fontSize: 12)),
+                                    : const Text(
+                                        'Connect Keyboard',
+                                        style: TextStyle(fontSize: 12),
+                                      ),
                               ),
                       );
                     }),

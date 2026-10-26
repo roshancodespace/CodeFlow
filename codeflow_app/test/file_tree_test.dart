@@ -55,8 +55,18 @@ void main() {
         isSelected: false,
       );
 
-      final node1 = FileTreeNode(name: 'f1.dart', relativePath: 'dir/f1.dart', isDirectory: false, file: f1);
-      final node2 = FileTreeNode(name: 'f2.dart', relativePath: 'dir/f2.dart', isDirectory: false, file: f2);
+      final node1 = FileTreeNode(
+        name: 'f1.dart',
+        relativePath: 'dir/f1.dart',
+        isDirectory: false,
+        file: f1,
+      );
+      final node2 = FileTreeNode(
+        name: 'f2.dart',
+        relativePath: 'dir/f2.dart',
+        isDirectory: false,
+        file: f2,
+      );
 
       final dirNode = FileTreeNode(
         name: 'dir',
@@ -70,7 +80,12 @@ void main() {
 
       // Select both -> true
       final f2Selected = f2.copyWith(isSelected: true);
-      final node2Selected = FileTreeNode(name: 'f2.dart', relativePath: 'dir/f2.dart', isDirectory: false, file: f2Selected);
+      final node2Selected = FileTreeNode(
+        name: 'f2.dart',
+        relativePath: 'dir/f2.dart',
+        isDirectory: false,
+        file: f2Selected,
+      );
       final dirNodeAll = FileTreeNode(
         name: 'dir',
         relativePath: 'dir',

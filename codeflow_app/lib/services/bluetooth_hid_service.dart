@@ -58,7 +58,13 @@ abstract class IBluetoothHidService {
   Future<bool> sendRawReport(List<int> report);
   Future<bool> sendEmergencyRelease();
   Future<bool> sendKeyPress(int hidCode, {int modifiers = 0});
-  Future<bool> sendKeyChord({required int hidCode, bool ctrl = false, bool alt = false, bool shift = false, bool meta = false});
+  Future<bool> sendKeyChord({
+    required int hidCode,
+    bool ctrl = false,
+    bool alt = false,
+    bool shift = false,
+    bool meta = false,
+  });
   Future<bool> typeCharacter(String char);
   void dispose();
 }
@@ -89,8 +95,13 @@ class HidScancodes {
 
   // Letters (a-z are 0x04 - 0x1D)
   static const int keyA = 0x04;
+  static const int keyC = 0x06;
+  static const int keyN = 0x11;
+  static const int keyO = 0x12;
+  static const int keyP = 0x13;
   static const int keyS = 0x16;
   static const int keyV = 0x19;
+  static const int keyW = 0x1A;
   static const int keyZ = 0x1D;
 
   // Numbers (1-9 are 0x1E - 0x26, 0 is 0x27)
@@ -98,7 +109,8 @@ class HidScancodes {
   static const int num0 = 0x27;
 
   // Symbols
-  static const int graveAccentTilde = 0x35; // ` and ~ (used for VS Code terminal Ctrl+~)
+  static const int graveAccentTilde =
+      0x35; // ` and ~ (used for VS Code terminal Ctrl+~)
   static const int minusUnderscore = 0x2D;
   static const int equalPlus = 0x2E;
   static const int bracketLeft = 0x2F;
@@ -139,38 +151,70 @@ class HidScancodes {
 
     // Special ASCII characters
     switch (char) {
-      case '!': return const MapEntry(num1, modLeftShift);
-      case '@': return const MapEntry(0x1F, modLeftShift);
-      case '#': return const MapEntry(0x20, modLeftShift);
-      case '\$': return const MapEntry(0x21, modLeftShift);
-      case '%': return const MapEntry(0x22, modLeftShift);
-      case '^': return const MapEntry(0x23, modLeftShift);
-      case '&': return const MapEntry(0x24, modLeftShift);
-      case '*': return const MapEntry(0x25, modLeftShift);
-      case '(': return const MapEntry(0x26, modLeftShift);
-      case ')': return const MapEntry(num0, modLeftShift);
-      case '-': return const MapEntry(minusUnderscore, 0);
-      case '_': return const MapEntry(minusUnderscore, modLeftShift);
-      case '=': return const MapEntry(equalPlus, 0);
-      case '+': return const MapEntry(equalPlus, modLeftShift);
-      case '[': return const MapEntry(bracketLeft, 0);
-      case '{': return const MapEntry(bracketLeft, modLeftShift);
-      case ']': return const MapEntry(bracketRight, 0);
-      case '}': return const MapEntry(bracketRight, modLeftShift);
-      case '\\': return const MapEntry(backslash, 0);
-      case '|': return const MapEntry(backslash, modLeftShift);
-      case ';': return const MapEntry(semicolonColon, 0);
-      case ':': return const MapEntry(semicolonColon, modLeftShift);
-      case '\'': return const MapEntry(singleDoubleQuote, 0);
-      case '"': return const MapEntry(singleDoubleQuote, modLeftShift);
-      case ',': return const MapEntry(commaLess, 0);
-      case '<': return const MapEntry(commaLess, modLeftShift);
-      case '.': return const MapEntry(periodGreater, 0);
-      case '>': return const MapEntry(periodGreater, modLeftShift);
-      case '/': return const MapEntry(slashQuestion, 0);
-      case '?': return const MapEntry(slashQuestion, modLeftShift);
-      case '`': return const MapEntry(graveAccentTilde, 0);
-      case '~': return const MapEntry(graveAccentTilde, modLeftShift);
+      case '!':
+        return const MapEntry(num1, modLeftShift);
+      case '@':
+        return const MapEntry(0x1F, modLeftShift);
+      case '#':
+        return const MapEntry(0x20, modLeftShift);
+      case '\$':
+        return const MapEntry(0x21, modLeftShift);
+      case '%':
+        return const MapEntry(0x22, modLeftShift);
+      case '^':
+        return const MapEntry(0x23, modLeftShift);
+      case '&':
+        return const MapEntry(0x24, modLeftShift);
+      case '*':
+        return const MapEntry(0x25, modLeftShift);
+      case '(':
+        return const MapEntry(0x26, modLeftShift);
+      case ')':
+        return const MapEntry(num0, modLeftShift);
+      case '-':
+        return const MapEntry(minusUnderscore, 0);
+      case '_':
+        return const MapEntry(minusUnderscore, modLeftShift);
+      case '=':
+        return const MapEntry(equalPlus, 0);
+      case '+':
+        return const MapEntry(equalPlus, modLeftShift);
+      case '[':
+        return const MapEntry(bracketLeft, 0);
+      case '{':
+        return const MapEntry(bracketLeft, modLeftShift);
+      case ']':
+        return const MapEntry(bracketRight, 0);
+      case '}':
+        return const MapEntry(bracketRight, modLeftShift);
+      case '\\':
+        return const MapEntry(backslash, 0);
+      case '|':
+        return const MapEntry(backslash, modLeftShift);
+      case ';':
+        return const MapEntry(semicolonColon, 0);
+      case ':':
+        return const MapEntry(semicolonColon, modLeftShift);
+      case '\'':
+        return const MapEntry(singleDoubleQuote, 0);
+      case '"':
+        return const MapEntry(singleDoubleQuote, modLeftShift);
+      case ',':
+        return const MapEntry(commaLess, 0);
+      case '<':
+        return const MapEntry(commaLess, modLeftShift);
+      case '.':
+        return const MapEntry(periodGreater, 0);
+      case '>':
+        return const MapEntry(periodGreater, modLeftShift);
+      case '/':
+        return const MapEntry(slashQuestion, 0);
+      case '?':
+        return const MapEntry(slashQuestion, modLeftShift);
+      case '`':
+        return const MapEntry(graveAccentTilde, 0);
+      case '~':
+        return const MapEntry(graveAccentTilde, modLeftShift);
       default:
         return null;
     }
@@ -178,11 +222,14 @@ class HidScancodes {
 }
 
 /// Production Bluetooth HID Service communicating with Android native BluetoothHidDevice.
-class BluetoothHidService extends ChangeNotifier implements IBluetoothHidService {
-  static const MethodChannel _methodChannel =
-      MethodChannel('dev.codeflow.app/bluetooth_hid');
-  static const EventChannel _eventChannel =
-      EventChannel('dev.codeflow.app/bluetooth_hid_events');
+class BluetoothHidService extends ChangeNotifier
+    implements IBluetoothHidService {
+  static const MethodChannel _methodChannel = MethodChannel(
+    'dev.codeflow.app/bluetooth_hid',
+  );
+  static const EventChannel _eventChannel = EventChannel(
+    'dev.codeflow.app/bluetooth_hid_events',
+  );
 
   final StreamController<HidConnectionStatus> _statusController =
       StreamController<HidConnectionStatus>.broadcast();
@@ -208,58 +255,62 @@ class BluetoothHidService extends ChangeNotifier implements IBluetoothHidService
   BluetoothHostDevice? get connectedHost => _connectedHost;
 
   @override
-  List<BluetoothHostDevice> get pairedDevices => List.unmodifiable(_pairedDevices);
+  List<BluetoothHostDevice> get pairedDevices =>
+      List.unmodifiable(_pairedDevices);
 
   void _initEventListener() {
     // Only listen on Android where the native channel is supported
     if (!kIsWeb && Platform.isAndroid) {
-      _eventSubscription =
-          _eventChannel.receiveBroadcastStream().listen((dynamic event) {
-        if (event is Map) {
-          final eventType = event['event'] as String?;
-          if (eventType == 'connection_state_changed') {
-            final stateStr = event['state'] as String?;
-            switch (stateStr) {
-              case 'connected':
-                _currentStatus = HidConnectionStatus.connected;
-                if (event['device'] is Map) {
-                  _connectedHost = BluetoothHostDevice.fromMap(
-                      event['device'] as Map<dynamic, dynamic>);
-                }
-                break;
-              case 'connecting':
-                _currentStatus = HidConnectionStatus.connecting;
-                break;
-              case 'disconnecting':
-                _currentStatus = HidConnectionStatus.disconnecting;
-                break;
-              case 'disconnected':
-              default:
-                _currentStatus = HidConnectionStatus.disconnected;
-                _connectedHost = null;
-                break;
+      _eventSubscription = _eventChannel.receiveBroadcastStream().listen(
+        (dynamic event) {
+          if (event is Map) {
+            final eventType = event['event'] as String?;
+            if (eventType == 'connection_state_changed') {
+              final stateStr = event['state'] as String?;
+              switch (stateStr) {
+                case 'connected':
+                  _currentStatus = HidConnectionStatus.connected;
+                  if (event['device'] is Map) {
+                    _connectedHost = BluetoothHostDevice.fromMap(
+                      event['device'] as Map<dynamic, dynamic>,
+                    );
+                  }
+                  break;
+                case 'connecting':
+                  _currentStatus = HidConnectionStatus.connecting;
+                  break;
+                case 'disconnecting':
+                  _currentStatus = HidConnectionStatus.disconnecting;
+                  break;
+                case 'disconnected':
+                default:
+                  _currentStatus = HidConnectionStatus.disconnected;
+                  _connectedHost = null;
+                  break;
+              }
+              _statusController.add(_currentStatus);
+              notifyListeners();
+            } else if (eventType == 'registration_state_changed') {
+              final registered = event['registered'] as bool? ?? false;
+              _currentStatus = registered
+                  ? HidConnectionStatus.registered
+                  : HidConnectionStatus.unregistered;
+              _statusController.add(_currentStatus);
+              notifyListeners();
+            } else if (eventType == 'paired_devices_changed') {
+              final list = event['devices'] as List? ?? [];
+              _pairedDevices = list
+                  .whereType<Map<dynamic, dynamic>>()
+                  .map((m) => BluetoothHostDevice.fromMap(m))
+                  .toList();
+              notifyListeners();
             }
-            _statusController.add(_currentStatus);
-            notifyListeners();
-          } else if (eventType == 'registration_state_changed') {
-            final registered = event['registered'] as bool? ?? false;
-            _currentStatus = registered
-                ? HidConnectionStatus.registered
-                : HidConnectionStatus.unregistered;
-            _statusController.add(_currentStatus);
-            notifyListeners();
-          } else if (eventType == 'paired_devices_changed') {
-            final list = event['devices'] as List? ?? [];
-            _pairedDevices = list
-                .whereType<Map<dynamic, dynamic>>()
-                .map((m) => BluetoothHostDevice.fromMap(m))
-                .toList();
-            notifyListeners();
           }
-        }
-      }, onError: (Object err) {
-        debugPrint('BluetoothHidService event error: $err');
-      });
+        },
+        onError: (Object err) {
+          debugPrint('BluetoothHidService event error: $err');
+        },
+      );
     } else {
       // Non-Android platforms (iOS / Desktop / Web)
       _currentStatus = HidConnectionStatus.unsupported;
@@ -292,8 +343,9 @@ class BluetoothHidService extends ChangeNotifier implements IBluetoothHidService
   Future<BluetoothHostDevice?> getConnectedHost() async {
     if (kIsWeb || !Platform.isAndroid) return _connectedHost;
     try {
-      final res = await _methodChannel
-          .invokeMapMethod<dynamic, dynamic>('getConnectedHost');
+      final res = await _methodChannel.invokeMapMethod<dynamic, dynamic>(
+        'getConnectedHost',
+      );
       if (res != null) {
         _connectedHost = BluetoothHostDevice.fromMap(res);
         return _connectedHost;
@@ -309,8 +361,9 @@ class BluetoothHidService extends ChangeNotifier implements IBluetoothHidService
   Future<bool> openBluetoothSettings() async {
     if (kIsWeb || !Platform.isAndroid) return false;
     try {
-      final res =
-          await _methodChannel.invokeMethod<bool>('openBluetoothSettings');
+      final res = await _methodChannel.invokeMethod<bool>(
+        'openBluetoothSettings',
+      );
       return res ?? false;
     } catch (e) {
       debugPrint('Error opening Bluetooth settings: $e');
@@ -384,9 +437,10 @@ class BluetoothHidService extends ChangeNotifier implements IBluetoothHidService
   Future<bool> requestDiscoverable({int duration = 300}) async {
     if (kIsWeb || !Platform.isAndroid) return false;
     try {
-      final res = await _methodChannel.invokeMethod<bool>('requestDiscoverable', {
-        'duration': duration,
-      });
+      final res = await _methodChannel.invokeMethod<bool>(
+        'requestDiscoverable',
+        {'duration': duration},
+      );
       return res ?? false;
     } catch (e) {
       debugPrint('Error requesting discoverable: $e');
@@ -430,8 +484,9 @@ class BluetoothHidService extends ChangeNotifier implements IBluetoothHidService
   Future<List<BluetoothHostDevice>> getPairedDevices() async {
     if (kIsWeb || !Platform.isAndroid) return const [];
     try {
-      final res = await _methodChannel
-          .invokeListMethod<Map<dynamic, dynamic>>('getPairedDevices');
+      final res = await _methodChannel.invokeListMethod<Map<dynamic, dynamic>>(
+        'getPairedDevices',
+      );
       if (res == null) return const [];
       return res.map((m) => BluetoothHostDevice.fromMap(m)).toList();
     } catch (e) {
@@ -446,8 +501,9 @@ class BluetoothHidService extends ChangeNotifier implements IBluetoothHidService
     _currentStatus = HidConnectionStatus.connecting;
     notifyListeners();
     try {
-      final res = await _methodChannel
-          .invokeMethod<bool>('connectHost', {'address': address});
+      final res = await _methodChannel.invokeMethod<bool>('connectHost', {
+        'address': address,
+      });
       await Future.delayed(const Duration(milliseconds: 300));
       await refreshState();
       return res ?? false;
@@ -480,8 +536,10 @@ class BluetoothHidService extends ChangeNotifier implements IBluetoothHidService
   Future<bool> sendRawReport(List<int> report) async {
     if (kIsWeb || !Platform.isAndroid) return false;
     try {
-      final res = await _methodChannel
-          .invokeMethod<bool>('sendReport', {'reportId': 0, 'data': report});
+      final res = await _methodChannel.invokeMethod<bool>('sendReport', {
+        'reportId': 0,
+        'data': report,
+      });
       return res ?? false;
     } catch (e) {
       debugPrint('Error sending raw HID report: $e');
@@ -493,8 +551,9 @@ class BluetoothHidService extends ChangeNotifier implements IBluetoothHidService
   Future<bool> sendEmergencyRelease() async {
     if (kIsWeb || !Platform.isAndroid) return false;
     try {
-      final res =
-          await _methodChannel.invokeMethod<bool>('sendEmergencyRelease');
+      final res = await _methodChannel.invokeMethod<bool>(
+        'sendEmergencyRelease',
+      );
       return res ?? false;
     } catch (e) {
       debugPrint('Error sending emergency release: $e');
@@ -505,7 +564,16 @@ class BluetoothHidService extends ChangeNotifier implements IBluetoothHidService
   @override
   Future<bool> sendKeyPress(int hidCode, {int modifiers = 0}) async {
     // 1. Key Down report: [modifiers, 0, hidCode, 0, 0, 0, 0, 0]
-    final keyDownReport = [modifiers, 0x00, hidCode, 0x00, 0x00, 0x00, 0x00, 0x00];
+    final keyDownReport = [
+      modifiers,
+      0x00,
+      hidCode,
+      0x00,
+      0x00,
+      0x00,
+      0x00,
+      0x00,
+    ];
     final success = await sendRawReport(keyDownReport);
     if (!success) return false;
 

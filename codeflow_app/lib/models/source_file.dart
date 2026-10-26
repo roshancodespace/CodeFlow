@@ -81,22 +81,22 @@ class SourceFile {
   }
 
   Map<String, dynamic> toJson() => {
-        'path': path,
-        'relativePath': relativePath,
-        'sizeInBytes': sizeInBytes,
-        'extension': extension,
-        'isDirectory': isDirectory,
-        'isSelected': isSelected,
-        'sha256': sha256,
-      };
+    'path': path,
+    'relativePath': relativePath,
+    'sizeInBytes': sizeInBytes,
+    'extension': extension,
+    'isDirectory': isDirectory,
+    'isSelected': isSelected,
+    'sha256': sha256,
+  };
 
   factory SourceFile.fromJson(Map<String, dynamic> json) => SourceFile(
-        path: json['path'] as String,
-        relativePath: json['relativePath'] as String,
-        sizeInBytes: json['sizeInBytes'] as int? ?? 0,
-        extension: json['extension'] as String? ?? '',
-        isDirectory: json['isDirectory'] as bool? ?? false,
-        isSelected: json['isSelected'] as bool? ?? true,
-        sha256: json['sha256'] as String?,
-      );
+    path: json['path'] as String,
+    relativePath: json['relativePath'] as String,
+    sizeInBytes: json['sizeInBytes'] as int? ?? 0,
+    extension: json['extension'] as String? ?? '',
+    isDirectory: json['isDirectory'] as bool? ?? false,
+    isSelected: json['isSelected'] as bool? ?? true,
+    sha256: json['sha256'] as String?,
+  );
 }

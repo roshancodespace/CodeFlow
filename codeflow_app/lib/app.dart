@@ -32,7 +32,8 @@ class MainNavigationShell extends ConsumerStatefulWidget {
   const MainNavigationShell({super.key});
 
   @override
-  ConsumerState<MainNavigationShell> createState() => _MainNavigationShellState();
+  ConsumerState<MainNavigationShell> createState() =>
+      _MainNavigationShellState();
 }
 
 class _MainNavigationShellState extends ConsumerState<MainNavigationShell> {
@@ -60,9 +61,7 @@ class _MainNavigationShellState extends ConsumerState<MainNavigationShell> {
         onNavigateTab: (idx) => setState(() => _currentIndex = idx),
         onOpenProject: _onOpenProject,
       ),
-      ProjectsScreen(
-        onSelectProject: _onOpenProject,
-      ),
+      ProjectsScreen(onSelectProject: _onOpenProject),
       const AutomationScreen(),
       const ScreenMonitorScreen(),
       const SettingsScreen(),
