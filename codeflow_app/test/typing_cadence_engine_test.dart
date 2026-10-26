@@ -37,7 +37,26 @@ class FakeBluetoothHidService implements IBluetoothHidService {
   Future<bool> isSupported() async => true;
 
   @override
-  Future<bool> registerApp() async => true;
+  Future<bool> hasPermissions() async => true;
+
+  @override
+  Future<bool> requestPermissions() async => true;
+
+  @override
+  Future<bool> isBluetoothEnabled() async => true;
+
+  @override
+  Future<bool> enableBluetooth() async => true;
+
+  @override
+  Future<bool> requestDiscoverable({int duration = 300}) async => true;
+
+  @override
+  Future<bool> registerApp({
+    String? deviceName,
+    String? providerName,
+    String? description,
+  }) async => true;
 
   @override
   Future<bool> sendEmergencyRelease() async {

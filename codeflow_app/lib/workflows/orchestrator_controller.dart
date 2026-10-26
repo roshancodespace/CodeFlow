@@ -159,6 +159,7 @@ class OrchestratorController extends ChangeNotifier {
   }) {
     final selectedFiles = project.files.where((f) => !f.isDirectory && f.isSelected).toList();
     final isMac = targetOs.toLowerCase().contains('darwin') || targetOs.toLowerCase().contains('mac');
+    final useDirect = _storage.automationMode == 'directNetwork' && companionAvailable;
 
     final steps = <WorkflowStep>[
       WorkflowStep(
@@ -170,20 +171,22 @@ class OrchestratorController extends ChangeNotifier {
         details: 'Countdown ${_storage.focusDelaySeconds}s to focus VS Code or Terminal on PC',
       ),
       WorkflowStep(
-        title: 'Open Terminal',
+        title: 'Toggle Terminal',
         details: isMac
-            ? 'Shortcut: Cmd + ~ (VS Code Terminal)'
-            : 'Shortcut: Ctrl + ~ (VS Code Terminal)',
+            ? 'Shortcut: Cmd + ` (VS Code Terminal)'
+            : 'Shortcut: Ctrl + ` (VS Code Terminal)',
       ),
       WorkflowStep(
-        title: companionAvailable ? 'Direct Network Transfer' : 'Bluetooth HID Keystroke Typing',
-        details: companionAvailable
+        title: useDirect ? 'Direct Network Transfer' : 'Humanized HID Keystroke Typing',
+        details: useDirect
             ? 'Fast direct transfer of ${selectedFiles.length} files to PC workspace'
-            : 'Typing ${selectedFiles.length} files via Bluetooth HID keyboard at ${_storage.typingSpeedCps} CPS',
+            : 'Typing ${selectedFiles.length} files via Bluetooth HID keyboard at ${_storage.typingSpeedCps} CPS with human jitter',
       ),
-      const WorkflowStep(
-        title: 'Verification & Save',
-        details: 'Verify file hashes and trigger save shortcut (Ctrl/Cmd + S)',
+      WorkflowStep(
+        title: 'Save & Post-Run Execution',
+        details: _storage.postRunCommand.isNotEmpty
+            ? 'Save editor (Ctrl+S) and execute: "${_storage.postRunCommand}"'
+            : 'Verify completion and trigger save shortcut (Ctrl/Cmd + S)',
       ),
     ];
 
@@ -299,7 +302,9 @@ class OrchestratorController extends ChangeNotifier {
 
           final content = file.content ?? '';
 
-          if (companionAvailable) {
+          final useDirect = _storage.automationMode == 'directNetwork' && companionAvailable;
+
+          if (useDirect) {
             // Direct network transfer to workspace
             final result = await _fileTransferService.transferFile(
               host: host,
@@ -312,7 +317,35 @@ class OrchestratorController extends ChangeNotifier {
               throw Exception('Direct transfer failed for ${file.relativePath}: ${result.errorMessage}');
             }
           } else {
-            // Bluetooth HID typing
+            // Real Human Bluetooth HID Keystroke Typing via terminal
+            final isWindows = targetOs.toLowerCase().contains('windows');
+            final dir = file.relativePath.contains('/')
+                ? file.relativePath.substring(0, file.relativePath.lastIndexOf('/'))
+                : '';
+
+            // 1. Prepare directory in terminal if nested
+            if (dir.isNotEmpty && startCharOffset == 0) {
+              final mkdirCmd = isWindows ? 'mkdir -Force "$dir"\n' : 'mkdir -p "$dir"\n';
+              for (final ch in mkdirCmd.split('')) {
+                await _hidService.typeCharacter(ch);
+                await Future.delayed(const Duration(milliseconds: 15));
+              }
+              await Future.delayed(const Duration(milliseconds: 200));
+            }
+
+            // 2. Prepare file injection command in shell
+            if (startCharOffset == 0) {
+              final headerCmd = isWindows
+                  ? 'powershell -Command "Set-Content -Path \'${file.relativePath}\' -Value @\'\n'
+                  : 'cat << \'CODEFLOW_EOF\' > "${file.relativePath}"\n';
+              for (final ch in headerCmd.split('')) {
+                await _hidService.typeCharacter(ch);
+                await Future.delayed(const Duration(milliseconds: 14));
+              }
+              await Future.delayed(const Duration(milliseconds: 150));
+            }
+
+            // 3. Humanized cadence typing of file contents
             final charsTyped = await _cadenceEngine.typeContent(
               content: content,
               fileName: file.relativePath,
@@ -320,6 +353,17 @@ class OrchestratorController extends ChangeNotifier {
               totalFiles: selectedFiles.length,
               startOffset: (i == startFileIndex) ? startCharOffset : 0,
             );
+
+            // 4. Close heredoc in terminal
+            if (!_isCancelled) {
+              final footerCmd = isWindows ? '\n\'@"\n' : '\nCODEFLOW_EOF\n';
+              for (final ch in footerCmd.split('')) {
+                await _hidService.typeCharacter(ch);
+                await Future.delayed(const Duration(milliseconds: 14));
+              }
+              await Future.delayed(const Duration(milliseconds: 300));
+            }
+
             if (_isCancelled) {
               await _storage.saveCheckpoint(WorkflowCheckpoint(
                 projectId: project.id,
@@ -347,7 +391,7 @@ class OrchestratorController extends ChangeNotifier {
       });
       if (_isCancelled) return;
 
-      // Step 4: Verification & Save
+      // Step 4: Verification, Save & Post-Run Command
       await _executeStep(4, () async {
         final isMac = targetOs.toLowerCase().contains('darwin') || targetOs.toLowerCase().contains('mac');
         // Trigger Ctrl + S to save active editor
@@ -356,7 +400,21 @@ class OrchestratorController extends ChangeNotifier {
           ctrl: !isMac,
           meta: isMac,
         );
-        await Future.delayed(const Duration(milliseconds: 300));
+        await Future.delayed(const Duration(milliseconds: 350));
+
+        // If post-run command is configured, type and execute it in terminal
+        final postCmd = _storage.postRunCommand;
+        if (postCmd.isNotEmpty) {
+          _state = _state.copyWith(
+            currentOperation: 'Executing post-run command: $postCmd',
+          );
+          notifyListeners();
+          for (final ch in '$postCmd\n'.split('')) {
+            await _hidService.typeCharacter(ch);
+            await Future.delayed(const Duration(milliseconds: 18));
+          }
+          await Future.delayed(const Duration(milliseconds: 500));
+        }
       });
 
       // Clear checkpoint on successful completion
@@ -444,6 +502,32 @@ class OrchestratorController extends ChangeNotifier {
       currentOperation: 'Emergency release sent: All keys released.',
     );
     notifyListeners();
+  }
+
+  /// Type a custom command string directly into PC with human cadence
+  Future<void> typeQuickCommand(String command, {bool pressEnter = true}) async {
+    final toType = pressEnter ? '$command\n' : command;
+    for (final ch in toType.split('')) {
+      await _hidService.typeCharacter(ch);
+      await Future.delayed(const Duration(milliseconds: 14));
+    }
+  }
+
+  /// Send a specific keyboard shortcut chord (e.g. Ctrl+~ or Ctrl+S)
+  Future<void> sendShortcut({
+    required int hidCode,
+    bool ctrl = false,
+    bool alt = false,
+    bool shift = false,
+    bool meta = false,
+  }) async {
+    await _hidService.sendKeyChord(
+      hidCode: hidCode,
+      ctrl: ctrl,
+      alt: alt,
+      shift: shift,
+      meta: meta,
+    );
   }
 
   @override

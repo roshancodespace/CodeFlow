@@ -9,6 +9,29 @@ Requirements:
     pip install mss aiohttp zeroconf Pillow
 """
 
+import os
+import sys
+
+# Auto re-exec into local virtualenv if running under base python and venv exists
+def _bootstrap_venv():
+    if os.environ.get("VIRTUAL_ENV"):
+        return
+    cur_dir = os.path.dirname(os.path.abspath(__file__))
+    candidates = [
+        os.path.join(cur_dir, "venv", "bin", "python"),
+        os.path.join(cur_dir, "venv", "Scripts", "python.exe"),
+        os.path.join(cur_dir, ".venv", "bin", "python"),
+        os.path.join(cur_dir, ".venv", "Scripts", "python.exe"),
+    ]
+    for cand in candidates:
+        if os.path.isfile(cand) and os.access(cand, os.X_OK) and sys.executable != cand:
+            try:
+                os.execv(cand, [cand] + sys.argv)
+            except Exception:
+                pass
+
+_bootstrap_venv()
+
 import argparse
 import asyncio
 import contextlib
@@ -16,12 +39,10 @@ import hashlib
 import io
 import json
 import logging
-import os
 import platform
 import shutil
 import socket
 import subprocess
-import sys
 import time
 import webbrowser
 from typing import Any, Dict, List, Optional, Tuple
@@ -37,6 +58,11 @@ try:
     from aiohttp import web
 except ImportError:
     web = None
+
+def _safe_middleware(handler):
+    if web is not None and hasattr(web, "middleware"):
+        return web.middleware(handler)
+    return handler
 
 try:
     from zeroconf import IPVersion, ServiceInfo, Zeroconf
@@ -592,7 +618,7 @@ class CodeFlowCompanionServer:
         self.zeroconf: Optional[AsyncZeroconf] = None
         self.service_info: Optional[ServiceInfo] = None
 
-    @web.middleware
+    @_safe_middleware
     async def _auth_middleware(self, request: web.Request, handler):
         # Allow open access to dashboard, health, and info, but protect /workspace/transfer and optionally /stream
         if request.path in ["/", "/health", "/info", "/config"]:

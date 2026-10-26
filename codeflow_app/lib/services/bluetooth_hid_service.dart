@@ -37,7 +37,16 @@ abstract class IBluetoothHidService {
   BluetoothHostDevice? get connectedHost;
 
   Future<bool> isSupported();
-  Future<bool> registerApp();
+  Future<bool> hasPermissions();
+  Future<bool> requestPermissions();
+  Future<bool> isBluetoothEnabled();
+  Future<bool> enableBluetooth();
+  Future<bool> requestDiscoverable({int duration = 300});
+  Future<bool> registerApp({
+    String? deviceName,
+    String? providerName,
+    String? description,
+  });
   Future<bool> unregisterApp();
   Future<List<BluetoothHostDevice>> getPairedDevices();
   Future<bool> connectHost(String address);
@@ -255,14 +264,84 @@ class BluetoothHidService implements IBluetoothHidService {
   }
 
   @override
-  Future<bool> registerApp() async {
+  Future<bool> hasPermissions() async {
     if (kIsWeb || !Platform.isAndroid) return false;
     try {
-      final res = await _methodChannel.invokeMethod<bool>('registerApp');
+      final res = await _methodChannel.invokeMethod<bool>('hasPermissions');
+      return res ?? false;
+    } catch (e) {
+      debugPrint('Error checking permissions: $e');
+      return false;
+    }
+  }
+
+  @override
+  Future<bool> requestPermissions() async {
+    if (kIsWeb || !Platform.isAndroid) return false;
+    try {
+      final res = await _methodChannel.invokeMethod<bool>('requestPermissions');
+      return res ?? false;
+    } catch (e) {
+      debugPrint('Error requesting permissions: $e');
+      return false;
+    }
+  }
+
+  @override
+  Future<bool> isBluetoothEnabled() async {
+    if (kIsWeb || !Platform.isAndroid) return false;
+    try {
+      final res = await _methodChannel.invokeMethod<bool>('isBluetoothEnabled');
+      return res ?? false;
+    } catch (e) {
+      debugPrint('Error checking Bluetooth enabled: $e');
+      return false;
+    }
+  }
+
+  @override
+  Future<bool> enableBluetooth() async {
+    if (kIsWeb || !Platform.isAndroid) return false;
+    try {
+      final res = await _methodChannel.invokeMethod<bool>('enableBluetooth');
+      return res ?? false;
+    } catch (e) {
+      debugPrint('Error enabling Bluetooth: $e');
+      return false;
+    }
+  }
+
+  @override
+  Future<bool> requestDiscoverable({int duration = 300}) async {
+    if (kIsWeb || !Platform.isAndroid) return false;
+    try {
+      final res = await _methodChannel.invokeMethod<bool>('requestDiscoverable', {
+        'duration': duration,
+      });
+      return res ?? false;
+    } catch (e) {
+      debugPrint('Error requesting discoverable: $e');
+      return false;
+    }
+  }
+
+  @override
+  Future<bool> registerApp({
+    String? deviceName,
+    String? providerName,
+    String? description,
+  }) async {
+    if (kIsWeb || !Platform.isAndroid) return false;
+    try {
+      final res = await _methodChannel.invokeMethod<bool>('registerApp', {
+        'deviceName': deviceName ?? 'Logitech MX Keys',
+        'providerName': providerName ?? 'Logitech Inc.',
+        'description': description ?? 'Wireless Bluetooth Keyboard',
+      });
       return res ?? false;
     } catch (e) {
       debugPrint('Error registering HID app: $e');
-      return false;
+      rethrow;
     }
   }
 

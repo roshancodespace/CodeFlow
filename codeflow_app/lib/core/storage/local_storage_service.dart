@@ -20,6 +20,22 @@ class LocalStorageService {
   static const String _keyHumanJitter = 'codeflow_human_jitter';
   static const String _keyProjects = 'codeflow_projects_list';
   static const String _keyCheckpointsPrefix = 'codeflow_checkpoint_';
+  static const String _keyAutomationMode = 'codeflow_automation_mode';
+  static const String _keySpooferProfile = 'codeflow_spoofer_profile';
+  static const String _keyPostRunCommand = 'codeflow_post_run_command';
+
+  // --- Automation & Spoofer Preferences ---
+  String get automationMode => _prefs.getString(_keyAutomationMode) ?? 'hidHumanTyping';
+  Future<void> setAutomationMode(String mode) async =>
+      _prefs.setString(_keyAutomationMode, mode);
+
+  String get spooferProfile => _prefs.getString(_keySpooferProfile) ?? 'Logitech MX Keys';
+  Future<void> setSpooferProfile(String profile) async =>
+      _prefs.setString(_keySpooferProfile, profile);
+
+  String get postRunCommand => _prefs.getString(_keyPostRunCommand) ?? '';
+  Future<void> setPostRunCommand(String cmd) async =>
+      _prefs.setString(_keyPostRunCommand, cmd.trim());
 
   // --- Theme Mode ---
   String get themeMode => _prefs.getString(_keyThemeMode) ?? 'system';

@@ -1,5 +1,6 @@
 package dev.codeflow.codeflow_app
 
+import android.Manifest
 import android.annotation.SuppressLint
 import android.bluetooth.BluetoothAdapter
 import android.bluetooth.BluetoothDevice
@@ -10,8 +11,11 @@ import android.bluetooth.BluetoothManager
 import android.bluetooth.BluetoothProfile
 import android.content.Context
 import android.content.Intent
+import android.content.pm.PackageManager
 import android.os.Build
-import android.os.Bundle
+import android.os.Handler
+import android.os.Looper
+import androidx.core.app.ActivityCompat
 import androidx.core.content.ContextCompat
 import io.flutter.embedding.android.FlutterActivity
 import io.flutter.embedding.engine.FlutterEngine
@@ -24,6 +28,7 @@ class MainActivity : FlutterActivity(), MethodChannel.MethodCallHandler, EventCh
     companion object {
         private const val METHOD_CHANNEL = "dev.codeflow.app/bluetooth_hid"
         private const val EVENT_CHANNEL = "dev.codeflow.app/bluetooth_hid_events"
+        private const val REQUEST_BT_PERMISSIONS = 1001
 
         // Standard USB HID Keyboard Descriptor
         private val HID_KEYBOARD_DESCRIPTOR = byteArrayOf(
@@ -68,6 +73,9 @@ class MainActivity : FlutterActivity(), MethodChannel.MethodCallHandler, EventCh
     private var connectedHostDevice: BluetoothDevice? = null
     private var eventSink: EventChannel.EventSink? = null
     private val executor = Executors.newSingleThreadExecutor()
+    private val mainHandler = Handler(Looper.getMainLooper())
+
+    private var pendingPermissionResult: MethodChannel.Result? = null
 
     private val hidCallback = object : BluetoothHidDevice.Callback() {
         override fun onAppStatusChanged(pluggedDevice: BluetoothDevice?, registered: Boolean) {
@@ -140,8 +148,8 @@ class MainActivity : FlutterActivity(), MethodChannel.MethodCallHandler, EventCh
         val bm = getSystemService(Context.BLUETOOTH_SERVICE) as? BluetoothManager
         bluetoothAdapter = bm?.adapter
 
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P && bluetoothAdapter != null) {
-            bluetoothAdapter?.getProfileProxy(this, profileListener, BluetoothProfile.HID_DEVICE)
+        if (hasRequiredPermissions()) {
+            bindHidProfile()
         }
 
         MethodChannel(flutterEngine.dartExecutor.binaryMessenger, METHOD_CHANNEL)
@@ -151,6 +159,101 @@ class MainActivity : FlutterActivity(), MethodChannel.MethodCallHandler, EventCh
             .setStreamHandler(this)
     }
 
+    private fun hasRequiredPermissions(): Boolean {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+            val connectGranted = ContextCompat.checkSelfPermission(
+                this,
+                Manifest.permission.BLUETOOTH_CONNECT
+            ) == PackageManager.PERMISSION_GRANTED
+            val advertiseGranted = ContextCompat.checkSelfPermission(
+                this,
+                Manifest.permission.BLUETOOTH_ADVERTISE
+            ) == PackageManager.PERMISSION_GRANTED
+            return connectGranted && advertiseGranted
+        } else {
+            val btGranted = ContextCompat.checkSelfPermission(
+                this,
+                Manifest.permission.BLUETOOTH
+            ) == PackageManager.PERMISSION_GRANTED
+            val btAdminGranted = ContextCompat.checkSelfPermission(
+                this,
+                Manifest.permission.BLUETOOTH_ADMIN
+            ) == PackageManager.PERMISSION_GRANTED
+            return btGranted && btAdminGranted
+        }
+    }
+
+    private fun requestRequiredPermissions(result: MethodChannel.Result? = null) {
+        pendingPermissionResult = result
+        val perms = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+            arrayOf(
+                Manifest.permission.BLUETOOTH_CONNECT,
+                Manifest.permission.BLUETOOTH_ADVERTISE,
+                Manifest.permission.BLUETOOTH_SCAN,
+                Manifest.permission.ACCESS_FINE_LOCATION
+            )
+        } else {
+            arrayOf(
+                Manifest.permission.BLUETOOTH,
+                Manifest.permission.BLUETOOTH_ADMIN,
+                Manifest.permission.ACCESS_FINE_LOCATION
+            )
+        }
+        ActivityCompat.requestPermissions(this, perms, REQUEST_BT_PERMISSIONS)
+    }
+
+    override fun onRequestPermissionsResult(
+        requestCode: Int,
+        permissions: Array<out String>,
+        grantResults: IntArray
+    ) {
+        super.onRequestPermissionsResult(requestCode, permissions, grantResults)
+        if (requestCode == REQUEST_BT_PERMISSIONS) {
+            val granted = grantResults.isNotEmpty() && grantResults[0] == PackageManager.PERMISSION_GRANTED
+            if (granted) {
+                bindHidProfile()
+            }
+            pendingPermissionResult?.success(granted)
+            pendingPermissionResult = null
+        }
+    }
+
+    private fun bindHidProfile(onConnected: ((Boolean) -> Unit)? = null) {
+        if (hidDevice != null) {
+            onConnected?.invoke(true)
+            return
+        }
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P && bluetoothAdapter != null) {
+            try {
+                val ok = bluetoothAdapter?.getProfileProxy(
+                    this,
+                    object : BluetoothProfile.ServiceListener {
+                        override fun onServiceConnected(profile: Int, proxy: BluetoothProfile?) {
+                            if (profile == BluetoothProfile.HID_DEVICE) {
+                                hidDevice = proxy as? BluetoothHidDevice
+                                profileListener.onServiceConnected(profile, proxy)
+                                mainHandler.post { onConnected?.invoke(true) }
+                            }
+                        }
+
+                        override fun onServiceDisconnected(profile: Int) {
+                            profileListener.onServiceDisconnected(profile)
+                        }
+                    },
+                    BluetoothProfile.HID_DEVICE
+                ) ?: false
+
+                if (!ok) {
+                    onConnected?.invoke(false)
+                }
+            } catch (e: Exception) {
+                onConnected?.invoke(false)
+            }
+        } else {
+            onConnected?.invoke(false)
+        }
+    }
+
     @SuppressLint("MissingPermission")
     override fun onMethodCall(call: MethodCall, result: MethodChannel.Result) {
         when (call.method) {
@@ -158,29 +261,61 @@ class MainActivity : FlutterActivity(), MethodChannel.MethodCallHandler, EventCh
                 val supported = Build.VERSION.SDK_INT >= Build.VERSION_CODES.P && bluetoothAdapter != null
                 result.success(supported)
             }
+            "hasPermissions" -> {
+                result.success(hasRequiredPermissions())
+            }
+            "requestPermissions" -> {
+                if (hasRequiredPermissions()) {
+                    result.success(true)
+                } else {
+                    requestRequiredPermissions(result)
+                }
+            }
+            "isBluetoothEnabled" -> {
+                result.success(bluetoothAdapter?.isEnabled == true)
+            }
+            "enableBluetooth" -> {
+                try {
+                    val enableBtIntent = Intent(BluetoothAdapter.ACTION_REQUEST_ENABLE)
+                    startActivity(enableBtIntent)
+                    result.success(true)
+                } catch (e: Exception) {
+                    result.error("ENABLE_BT_FAILED", e.message, null)
+                }
+            }
+            "requestDiscoverable" -> {
+                try {
+                    val duration = call.argument<Int>("duration") ?: 300
+                    val discoverableIntent = Intent(BluetoothAdapter.ACTION_REQUEST_DISCOVERABLE).apply {
+                        putExtra(BluetoothAdapter.EXTRA_DISCOVERABLE_DURATION, duration)
+                    }
+                    startActivity(discoverableIntent)
+                    result.success(true)
+                } catch (e: Exception) {
+                    result.error("DISCOVERABLE_FAILED", e.message, null)
+                }
+            }
             "registerApp" -> {
-                if (Build.VERSION.SDK_INT < Build.VERSION_CODES.P || hidDevice == null) {
-                    result.success(false)
+                if (!hasRequiredPermissions()) {
+                    requestRequiredPermissions(object : MethodChannel.Result {
+                        override fun success(res: Any?) {
+                            if (res == true) {
+                                proceedRegister(call, result)
+                            } else {
+                                result.error("PERMISSION_DENIED", "Bluetooth connect & advertise permissions are required.", null)
+                            }
+                        }
+                        override fun error(code: String, msg: String?, details: Any?) {
+                            result.error(code, msg, details)
+                        }
+                        override fun notImplemented() {
+                            result.notImplemented()
+                        }
+                    })
                     return
                 }
-                try {
-                    val sdp = BluetoothHidDeviceAppSdpSettings(
-                        "CodeFlow Keyboard",
-                        "CodeFlow Automation Keyboard",
-                        "CodeFlow",
-                        BluetoothHidDevice.SUBCLASS1_KEYBOARD,
-                        HID_KEYBOARD_DESCRIPTOR
-                    )
-                    val qos = BluetoothHidDeviceAppQosSettings(
-                        BluetoothHidDeviceAppQosSettings.SERVICE_BEST_EFFORT,
-                        800, 9, 0, 11250,
-                        BluetoothHidDeviceAppQosSettings.MAX
-                    )
-                    val success = hidDevice?.registerApp(sdp, null, qos, executor, hidCallback) ?: false
-                    result.success(success)
-                } catch (e: Exception) {
-                    result.error("REGISTRATION_FAILED", e.message, null)
-                }
+
+                proceedRegister(call, result)
             }
             "unregisterApp" -> {
                 if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
@@ -258,6 +393,73 @@ class MainActivity : FlutterActivity(), MethodChannel.MethodCallHandler, EventCh
                 result.success(true)
             }
             else -> result.notImplemented()
+        }
+    }
+
+    @SuppressLint("MissingPermission")
+    private fun proceedRegister(call: MethodCall, result: MethodChannel.Result) {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.P) {
+            result.error("UNSUPPORTED", "Bluetooth HID Device requires Android 9 (API 28) or higher.", null)
+            return
+        }
+
+        if (bluetoothAdapter?.isEnabled == false) {
+            try {
+                val enableBtIntent = Intent(BluetoothAdapter.ACTION_REQUEST_ENABLE)
+                startActivity(enableBtIntent)
+            } catch (e: Exception) {
+                // Ignore
+            }
+            result.error("BLUETOOTH_DISABLED", "Please enable Bluetooth in your device settings.", null)
+            return
+        }
+
+        val deviceName = call.argument<String>("deviceName") ?: "Logitech MX Keys"
+        val providerName = call.argument<String>("providerName") ?: "Logitech Inc."
+        val description = call.argument<String>("description") ?: "Wireless Bluetooth Keyboard"
+
+        // Attempt to rename adapter to spoof hardware brand
+        try {
+            bluetoothAdapter?.name = deviceName
+        } catch (e: Exception) {
+            // Non-fatal if device prevents rename
+        }
+
+        fun executeRegistration() {
+            if (hidDevice == null) {
+                result.error("PROXY_UNAVAILABLE", "Android Bluetooth HID service proxy is not connected.", null)
+                return
+            }
+            try {
+                val sdp = BluetoothHidDeviceAppSdpSettings(
+                    deviceName,
+                    description,
+                    providerName,
+                    BluetoothHidDevice.SUBCLASS1_KEYBOARD,
+                    HID_KEYBOARD_DESCRIPTOR
+                )
+                val qos = BluetoothHidDeviceAppQosSettings(
+                    BluetoothHidDeviceAppQosSettings.SERVICE_BEST_EFFORT,
+                    800, 9, 0, 11250,
+                    BluetoothHidDeviceAppQosSettings.MAX
+                )
+                val registered = hidDevice?.registerApp(sdp, null, qos, executor, hidCallback) ?: false
+                result.success(registered)
+            } catch (e: Exception) {
+                result.error("REGISTRATION_FAILED", e.message, null)
+            }
+        }
+
+        if (hidDevice != null) {
+            executeRegistration()
+        } else {
+            bindHidProfile { ready ->
+                if (ready && hidDevice != null) {
+                    executeRegistration()
+                } else {
+                    result.error("PROXY_TIMEOUT", "Failed to connect to Bluetooth HID service. Please verify Bluetooth is turned ON.", null)
+                }
+            }
         }
     }
 
