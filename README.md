@@ -187,7 +187,7 @@ Regular users **do not need Python installed**. They can download pre-compiled, 
 - **Windows:** `codeflow-companion-windows-x64.exe` (or `.zip`)
 - **Linux:** `codeflow-companion-linux-x64.tar.gz` (or raw binary)
 - **macOS:** `codeflow-companion-macos.zip`
-- **Android Phone:** `CodeFlow-Android-v1.0.0.apk`
+- **Android Phone (64-bit):** `CodeFlow-Android-arm64-v1.0.0.apk` (specifically compiled for modern 64-bit `arm64-v8a` architecture for minimal size and high performance)
 
 ### How It Works for a Regular User:
 1. **Double-Click Executable:** Run `codeflow-companion.exe` on Windows or `./codeflow-companion` on Linux.

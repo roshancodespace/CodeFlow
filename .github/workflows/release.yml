@@ -204,14 +204,15 @@ jobs:
         working-directory: codeflow_app
         run: flutter test
 
-      - name: Build Android APK
+      - name: Build Android APK (64-bit arm64-v8a)
         working-directory: codeflow_app
-        run: flutter build apk --release
+        run: flutter build apk --release --target-platform android-arm64
 
       - name: Rename APK
         run: |
           mkdir -p release_apk
-          cp codeflow_app/build/app/outputs/flutter-apk/app-release.apk "release_apk/CodeFlow-Android-${{ needs.version-check.outputs.version }}.apk"
+          OUTPUT_APK=$(find codeflow_app/build/app/outputs/flutter-apk -maxdepth 1 -name "*release*.apk" | head -n 1)
+          cp "$OUTPUT_APK" "release_apk/CodeFlow-Android-arm64-${{ needs.version-check.outputs.version }}.apk"
 
       - name: Upload Android APK
         uses: actions/upload-artifact@v4
@@ -268,11 +269,11 @@ jobs:
             - **Linux**: [codeflow-companion-linux-x64.tar.gz](codeflow-companion-linux-x64.tar.gz) or standalone binary
             - **macOS**: [codeflow-companion-darwin-x64.tar.gz](codeflow-companion-darwin-x64.tar.gz)
 
-            ### 📱 Mobile App
-            - **Android APK**: [CodeFlow-Android-${{ needs.version-check.outputs.version }}.apk](CodeFlow-Android-${{ needs.version-check.outputs.version }}.apk)
+            ### 📱 Mobile App (64-bit Architecture)
+            - **Android 64-bit (ARM64-v8a) APK**: [CodeFlow-Android-arm64-${{ needs.version-check.outputs.version }}.apk](CodeFlow-Android-arm64-${{ needs.version-check.outputs.version }}.apk)
 
             ---
             ### ⚡ Quick Start for Regular Users
             1. **On your PC**: Download and run `codeflow-companion` (it automatically opens your browser dashboard showing your PC is ready).
-            2. **On your Phone**: Install `CodeFlow-Android.apk`.
+            2. **On your Phone**: Install `CodeFlow-Android-arm64-*.apk`.
             3. **Connect**: Both devices on the same Wi-Fi will auto-discover. Pair Bluetooth in CodeFlow settings, and start live streaming and code automation!
