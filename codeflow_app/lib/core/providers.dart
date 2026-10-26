@@ -55,7 +55,7 @@ final themeModeProvider =
 });
 
 // --- Services Providers ---
-final hidServiceProvider = Provider<IBluetoothHidService>((ref) {
+final hidServiceProvider = ChangeNotifierProvider<BluetoothHidService>((ref) {
   final service = BluetoothHidService();
   ref.onDispose(() => service.dispose());
   return service;

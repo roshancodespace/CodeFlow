@@ -23,6 +23,9 @@ class FakeBluetoothHidService implements IBluetoothHidService {
   HidConnectionStatus get currentStatus => HidConnectionStatus.connected;
 
   @override
+  List<BluetoothHostDevice> get pairedDevices => [connectedHost!];
+
+  @override
   Future<bool> connectHost(String address) async => true;
 
   @override
@@ -32,6 +35,15 @@ class FakeBluetoothHidService implements IBluetoothHidService {
   Future<List<BluetoothHostDevice>> getPairedDevices() async => [
     connectedHost!,
   ];
+
+  @override
+  Future<BluetoothHostDevice?> getConnectedHost() async => connectedHost;
+
+  @override
+  Future<bool> openBluetoothSettings() async => true;
+
+  @override
+  Future<void> refreshState() async {}
 
   @override
   Future<bool> isSupported() async => true;
@@ -99,7 +111,7 @@ class FakeBluetoothHidService implements IBluetoothHidService {
   Future<bool> unregisterApp() async => true;
 
   @override
-  Future<void> dispose() async {}
+  void dispose() {}
 }
 
 void main() {

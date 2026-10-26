@@ -12,20 +12,22 @@ class SettingsScreen extends ConsumerStatefulWidget {
   ConsumerState<SettingsScreen> createState() => _SettingsScreenState();
 }
 
-class _SettingsScreenState extends ConsumerState<SettingsScreen> {
+class _SettingsScreenState extends ConsumerState<SettingsScreen>
+    with WidgetsBindingObserver {
   final List<DiscoveredCompanion> _discoveredCompanions = [];
   bool _isSearching = false;
-  List<BluetoothHostDevice> _pairedHosts = [];
 
   late TextEditingController _hostController;
   late TextEditingController _portController;
   late TextEditingController _tokenController;
   late TextEditingController _postRunController;
   bool _isRegisteringHid = false;
+  String? _connectingAddress;
 
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addObserver(this);
     final storage = ref.read(localStorageProvider);
     _hostController = TextEditingController(text: storage.companionHost);
     _portController = TextEditingController(
@@ -37,23 +39,22 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
     _postRunController = TextEditingController(
       text: storage.postRunCommand,
     );
-    _loadPairedBluetoothDevices();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      ref.read(hidServiceProvider).refreshState();
+    });
   }
 
-  Future<void> _loadPairedBluetoothDevices() async {
-    final hid = ref.read(hidServiceProvider);
-    final devices = await hid.getPairedDevices();
-    if (mounted) {
-      setState(() {
-        _pairedHosts = devices;
-      });
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.resumed) {
+      ref.read(hidServiceProvider).refreshState();
     }
   }
 
   Future<void> _registerHidWithSpoofer() async {
     setState(() => _isRegisteringHid = true);
     final hid = ref.read(hidServiceProvider);
-    final storage = ref.read(localStorageProvider);
+    final storage = ref.read(localStorageProvider);O
     final profile = storage.spooferProfile;
 
     String provider = 'Logitech Inc.';
@@ -74,7 +75,7 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
 
       // Make discoverable for 300 seconds so PC Bluetooth search finds it
       await hid.requestDiscoverable(duration: 300);
-      await _loadPairedBluetoothDevices();
+      await hid.refreshState();
 
       if (mounted) {
         setState(() => _isRegisteringHid = false);
@@ -153,6 +154,7 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
 
   @override
   void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
     _hostController.dispose();
     _portController.dispose();
     _tokenController.dispose();
@@ -509,61 +511,179 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
                       color: AppColors.lightTextMuted,
                     ),
                   ),
-                  if (_pairedHosts.isNotEmpty) ...[
-                    const SizedBox(height: 14),
-                    const Text(
-                      'Paired PC Hosts:',
-                      style: TextStyle(
-                        fontSize: 12,
-                        fontWeight: FontWeight.w600,
+                  const SizedBox(height: 14),
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    children: [
+                      const Text(
+                        'Paired PC Hosts:',
+                        style: TextStyle(
+                          fontSize: 12,
+                          fontWeight: FontWeight.w600,
+                        ),
                       ),
-                    ),
-                    const SizedBox(height: 6),
-                    ..._pairedHosts.map((dev) {
+                      Row(
+                        children: [
+                          IconButton(
+                            icon: const Icon(Icons.refresh, size: 16),
+                            tooltip: 'Refresh paired devices',
+                            padding: EdgeInsets.zero,
+                            constraints: const BoxConstraints(),
+                            onPressed: () async {
+                              await hid.refreshState();
+                              if (context.mounted) {
+                                ScaffoldMessenger.of(context).showSnackBar(
+                                  SnackBar(
+                                    content: Text(
+                                      'Refreshed paired devices (${hid.pairedDevices.length} found)',
+                                    ),
+                                    duration: const Duration(seconds: 1),
+                                  ),
+                                );
+                              }
+                            },
+                          ),
+                          const SizedBox(width: 8),
+                          TextButton.icon(
+                            icon: const Icon(Icons.settings_bluetooth, size: 14),
+                            label: const Text('Bluetooth Settings', style: TextStyle(fontSize: 11)),
+                            style: TextButton.styleFrom(
+                              padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 4),
+                              minimumSize: Size.zero,
+                              tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                            ),
+                            onPressed: () => hid.openBluetoothSettings(),
+                          ),
+                        ],
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 8),
+                  if (hid.pairedDevices.isEmpty)
+                    Container(
+                      width: double.infinity,
+                      padding: const EdgeInsets.all(12),
+                      decoration: BoxDecoration(
+                        color: isDark ? AppColors.darkBackground : AppColors.lightBackground,
+                        borderRadius: BorderRadius.circular(6),
+                        border: Border.all(color: borderColor),
+                      ),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Row(
+                            children: const [
+                              Icon(Icons.bluetooth_searching, size: 16, color: AppColors.accentLight),
+                              SizedBox(width: 8),
+                              Text(
+                                'No Paired PC Hosts Found Yet',
+                                style: TextStyle(fontSize: 12, fontWeight: FontWeight.w600),
+                              ),
+                            ],
+                          ),
+                          const SizedBox(height: 6),
+                          const Text(
+                            '1. Tap "1-Tap Register & Discover" above.\n2. On your PC, open Bluetooth Settings.\n3. Add Bluetooth device and select the advertised keyboard name.\n4. Once paired, it will appear here automatically!',
+                            style: TextStyle(fontSize: 11, color: AppColors.lightTextMuted, height: 1.4),
+                          ),
+                        ],
+                      ),
+                    )
+                  else
+                    ...hid.pairedDevices.map((dev) {
                       final isConnected = hid.connectedHost?.address == dev.address;
+                      final isThisConnecting = _connectingAddress == dev.address &&
+                          hid.currentStatus == HidConnectionStatus.connecting;
+
                       return ListTile(
                         dense: true,
                         contentPadding: EdgeInsets.zero,
                         leading: Icon(
                           Icons.keyboard,
-                          size: 18,
-                          color: isConnected ? AppColors.statusSuccess : AppColors.lightTextMuted,
+                          size: 20,
+                          color: isConnected
+                              ? AppColors.statusSuccess
+                              : isThisConnecting
+                                  ? AppColors.statusWarning
+                                  : AppColors.lightTextMuted,
                         ),
                         title: Text(
                           dev.name,
                           style: TextStyle(
                             fontSize: 13,
-                            fontWeight: isConnected ? FontWeight.w700 : FontWeight.normal,
+                            fontWeight: isConnected ? FontWeight.w700 : FontWeight.w500,
                           ),
                         ),
                         subtitle: Text(
-                          '${dev.address}${isConnected ? ' • CONNECTED' : ''}',
+                          isConnected
+                              ? '${dev.address} • KEYBOARD ACTIVE'
+                              : isThisConnecting
+                                  ? '${dev.address} • CONNECTING...'
+                                  : '${dev.address} • PAIRED',
                           style: TextStyle(
                             fontSize: 11,
                             fontFamily: 'monospace',
-                            color: isConnected ? AppColors.statusSuccess : AppColors.lightTextMuted,
+                            fontWeight: isConnected ? FontWeight.w600 : FontWeight.normal,
+                            color: isConnected
+                                ? AppColors.statusSuccess
+                                : isThisConnecting
+                                    ? AppColors.statusWarning
+                                    : AppColors.lightTextMuted,
                           ),
                         ),
-                        trailing: FilledButton.tonal(
-                          onPressed: () async {
-                            final ok = await hid.connectHost(dev.address);
-                            if (context.mounted) {
-                              ScaffoldMessenger.of(context).showSnackBar(
-                                SnackBar(
-                                  content: Text(
-                                    ok
-                                        ? 'Connecting HID to ${dev.name}...'
-                                        : 'Failed to initiate connection to ${dev.name}',
-                                  ),
+                        trailing: isConnected
+                            ? OutlinedButton(
+                                onPressed: () async {
+                                  await hid.disconnectHost();
+                                  if (context.mounted) {
+                                    ScaffoldMessenger.of(context).showSnackBar(
+                                      SnackBar(
+                                        content: Text('Disconnected from ${dev.name}'),
+                                      ),
+                                    );
+                                  }
+                                },
+                                style: OutlinedButton.styleFrom(
+                                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                                  minimumSize: Size.zero,
+                                  tapTargetSize: MaterialTapTargetSize.shrinkWrap,
                                 ),
-                              );
-                            }
-                          },
-                          child: Text(isConnected ? 'Reconnect' : 'Connect'),
-                        ),
+                                child: const Text('Disconnect', style: TextStyle(fontSize: 12)),
+                              )
+                            : FilledButton.tonal(
+                                onPressed: isThisConnecting
+                                    ? null
+                                    : () async {
+                                        setState(() => _connectingAddress = dev.address);
+                                        final ok = await hid.connectHost(dev.address);
+                                        if (context.mounted) {
+                                          setState(() => _connectingAddress = null);
+                                          ScaffoldMessenger.of(context).showSnackBar(
+                                            SnackBar(
+                                              content: Text(
+                                                ok
+                                                    ? 'Connecting HID keyboard to ${dev.name}...'
+                                                    : 'Failed to initiate connection to ${dev.name}',
+                                              ),
+                                            ),
+                                          );
+                                        }
+                                      },
+                                style: FilledButton.styleFrom(
+                                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                                  minimumSize: Size.zero,
+                                  tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                                ),
+                                child: isThisConnecting
+                                    ? const SizedBox(
+                                        width: 14,
+                                        height: 14,
+                                        child: CircularProgressIndicator(strokeWidth: 2),
+                                      )
+                                    : const Text('Connect Keyboard', style: TextStyle(fontSize: 12)),
+                              ),
                       );
                     }),
-                  ],
                 ],
               ),
             ),

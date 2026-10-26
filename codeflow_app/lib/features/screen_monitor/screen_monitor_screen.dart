@@ -172,36 +172,80 @@ class _ScreenMonitorScreenState extends ConsumerState<ScreenMonitorScreen> {
                         overflow: TextOverflow.ellipsis,
                       ),
                     ),
-                    Container(
-                      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-                      decoration: BoxDecoration(
-                        color: hidService.connectedHost != null
-                            ? AppColors.statusSuccess.withAlpha(30)
-                            : AppColors.statusWarning.withAlpha(30),
-                        borderRadius: BorderRadius.circular(4),
-                      ),
-                      child: Row(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          Icon(
-                            Icons.keyboard,
-                            size: 12,
+                    InkWell(
+                      onTap: () async {
+                        if (hidService.connectedHost != null) {
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            SnackBar(
+                              content: Text(
+                                'HID Keyboard active with ${hidService.connectedHost!.name} (${hidService.connectedHost!.address})',
+                              ),
+                            ),
+                          );
+                        } else if (hidService.pairedDevices.isNotEmpty) {
+                          final firstHost = hidService.pairedDevices.first;
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            SnackBar(
+                              content: Text('Connecting HID to ${firstHost.name}...'),
+                            ),
+                          );
+                          await hidService.connectHost(firstHost.address);
+                        } else {
+                          Navigator.pushNamed(context, '/settings');
+                        }
+                      },
+                      borderRadius: BorderRadius.circular(4),
+                      child: Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                        decoration: BoxDecoration(
+                          color: hidService.connectedHost != null
+                              ? AppColors.statusSuccess.withAlpha(25)
+                              : hidService.pairedDevices.isNotEmpty
+                                  ? AppColors.statusWarning.withAlpha(35)
+                                  : AppColors.lightBorder.withAlpha(80),
+                          borderRadius: BorderRadius.circular(4),
+                          border: Border.all(
                             color: hidService.connectedHost != null
-                                ? AppColors.statusSuccess
-                                : AppColors.statusWarning,
+                                ? AppColors.statusSuccess.withAlpha(80)
+                                : hidService.pairedDevices.isNotEmpty
+                                    ? AppColors.statusWarning.withAlpha(120)
+                                    : AppColors.lightBorder,
+                            width: 1,
                           ),
-                          const SizedBox(width: 4),
-                          Text(
-                            hidService.connectedHost != null ? 'HID Paired' : 'HID Unpaired',
-                            style: TextStyle(
-                              fontSize: 10,
-                              fontWeight: FontWeight.w600,
+                        ),
+                        child: Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Icon(
+                              Icons.keyboard,
+                              size: 13,
                               color: hidService.connectedHost != null
                                   ? AppColors.statusSuccess
-                                  : AppColors.statusWarning,
+                                  : hidService.pairedDevices.isNotEmpty
+                                      ? AppColors.statusWarning
+                                      : AppColors.lightTextMuted,
                             ),
-                          ),
-                        ],
+                            const SizedBox(width: 5),
+                            Text(
+                              hidService.connectedHost != null
+                                  ? 'Keyboard: ${hidService.connectedHost!.name}'
+                                  : hidService.currentStatus == HidConnectionStatus.connecting
+                                      ? 'Connecting HID...'
+                                      : hidService.pairedDevices.isNotEmpty
+                                          ? 'Paired: ${hidService.pairedDevices.first.name} (Tap)'
+                                          : 'No Host Paired (Tap)',
+                              style: TextStyle(
+                                fontSize: 10,
+                                fontWeight: FontWeight.w600,
+                                color: hidService.connectedHost != null
+                                    ? AppColors.statusSuccess
+                                    : hidService.pairedDevices.isNotEmpty
+                                        ? AppColors.statusWarning
+                                        : AppColors.lightTextMuted,
+                              ),
+                            ),
+                          ],
+                        ),
                       ),
                     ),
                   ],

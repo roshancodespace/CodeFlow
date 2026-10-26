@@ -9,8 +9,10 @@ import android.bluetooth.BluetoothHidDeviceAppQosSettings
 import android.bluetooth.BluetoothHidDeviceAppSdpSettings
 import android.bluetooth.BluetoothManager
 import android.bluetooth.BluetoothProfile
+import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
+import android.content.IntentFilter
 import android.content.pm.PackageManager
 import android.os.Build
 import android.os.Handler
@@ -74,13 +76,110 @@ class MainActivity : FlutterActivity(), MethodChannel.MethodCallHandler, EventCh
     private var eventSink: EventChannel.EventSink? = null
     private val executor = Executors.newSingleThreadExecutor()
     private val mainHandler = Handler(Looper.getMainLooper())
+    private var isReceiverRegistered = false
 
     private var pendingPermissionResult: MethodChannel.Result? = null
+    private var pendingConnectDevice: BluetoothDevice? = null
+
+    @SuppressLint("MissingPermission")
+    private fun autoRegisterDefaultApp(onDone: ((Boolean) -> Unit)? = null) {
+        if (hidDevice == null || isRegistered) {
+            onDone?.invoke(isRegistered)
+            return
+        }
+        try {
+            val sdp = BluetoothHidDeviceAppSdpSettings(
+                "Logitech MX Keys",
+                "Wireless Bluetooth Keyboard",
+                "Logitech Inc.",
+                BluetoothHidDevice.SUBCLASS1_KEYBOARD,
+                HID_KEYBOARD_DESCRIPTOR
+            )
+            val qos = BluetoothHidDeviceAppQosSettings(
+                BluetoothHidDeviceAppQosSettings.SERVICE_BEST_EFFORT,
+                800, 9, 0, 11250,
+                BluetoothHidDeviceAppQosSettings.MAX
+            )
+            val ok = hidDevice?.registerApp(sdp, null, qos, executor, hidCallback) ?: false
+            onDone?.invoke(ok)
+        } catch (e: Exception) {
+            onDone?.invoke(false)
+        }
+    }
+
+    @SuppressLint("MissingPermission")
+    private fun ensureRegisteredAndConnect(device: BluetoothDevice) {
+        if (hidDevice == null) {
+            bindHidProfile { ready ->
+                if (ready) {
+                    ensureRegisteredAndConnect(device)
+                }
+            }
+            return
+        }
+        if (!isRegistered) {
+            pendingConnectDevice = device
+            autoRegisterDefaultApp()
+        } else {
+            try {
+                hidDevice?.connect(device)
+            } catch (e: Exception) {
+                // Non-fatal
+            }
+        }
+    }
+
+    private val bluetoothReceiver = object : BroadcastReceiver() {
+        override fun onReceive(context: Context?, intent: Intent?) {
+            val action = intent?.action ?: return
+            when (action) {
+                BluetoothDevice.ACTION_BOND_STATE_CHANGED -> {
+                    @Suppress("DEPRECATION")
+                    val device = intent.getParcelableExtra<BluetoothDevice>(BluetoothDevice.EXTRA_DEVICE)
+                    val bondState = intent.getIntExtra(BluetoothDevice.EXTRA_BOND_STATE, BluetoothDevice.BOND_NONE)
+                    if (bondState == BluetoothDevice.BOND_BONDED && device != null) {
+                        ensureRegisteredAndConnect(device)
+                    }
+                    notifyPairedDevicesChanged()
+                }
+                BluetoothDevice.ACTION_ACL_CONNECTED -> {
+                    @Suppress("DEPRECATION")
+                    val device = intent.getParcelableExtra<BluetoothDevice>(BluetoothDevice.EXTRA_DEVICE)
+                    if (device != null && connectedHostDevice == null) {
+                        ensureRegisteredAndConnect(device)
+                    }
+                    notifyPairedDevicesChanged()
+                }
+                BluetoothDevice.ACTION_ACL_DISCONNECTED -> {
+                    @Suppress("DEPRECATION")
+                    val device = intent.getParcelableExtra<BluetoothDevice>(BluetoothDevice.EXTRA_DEVICE)
+                    if (device != null && connectedHostDevice?.address == device.address) {
+                        connectedHostDevice = null
+                    }
+                    notifyPairedDevicesChanged()
+                }
+                BluetoothAdapter.ACTION_STATE_CHANGED -> {
+                    notifyPairedDevicesChanged()
+                }
+            }
+        }
+    }
 
     private val hidCallback = object : BluetoothHidDevice.Callback() {
         override fun onAppStatusChanged(pluggedDevice: BluetoothDevice?, registered: Boolean) {
             super.onAppStatusChanged(pluggedDevice, registered)
             isRegistered = registered
+            if (registered && pendingConnectDevice != null) {
+                val target = pendingConnectDevice
+                pendingConnectDevice = null
+                if (target != null) {
+                    try {
+                        hidDevice?.connect(target)
+                    } catch (e: Exception) {
+                        // Non-fatal
+                    }
+                }
+            }
             runOnUiThread {
                 eventSink?.success(
                     mapOf(
@@ -123,6 +222,7 @@ class MainActivity : FlutterActivity(), MethodChannel.MethodCallHandler, EventCh
                     )
                 }
                 eventSink?.success(payload)
+                notifyPairedDevicesChanged()
             }
         }
     }
@@ -131,6 +231,35 @@ class MainActivity : FlutterActivity(), MethodChannel.MethodCallHandler, EventCh
         override fun onServiceConnected(profile: Int, proxy: BluetoothProfile?) {
             if (profile == BluetoothProfile.HID_DEVICE) {
                 hidDevice = proxy as? BluetoothHidDevice
+                // Check if any host is already connected to the HID profile
+                try {
+                    val connected = hidDevice?.getConnectedDevices() ?: emptyList()
+                    if (connected.isNotEmpty()) {
+                        connectedHostDevice = connected.first()
+                        runOnUiThread {
+                            eventSink?.success(
+                                mapOf(
+                                    "event" to "connection_state_changed",
+                                    "state" to "connected",
+                                    "device" to mapOf(
+                                        "name" to (connectedHostDevice?.name ?: "PC Host"),
+                                        "address" to (connectedHostDevice?.address ?: "")
+                                    )
+                                )
+                            )
+                        }
+                    } else if (connectedHostDevice == null) {
+                        // Auto-connect to first bonded device
+                        val bonded = bluetoothAdapter?.bondedDevices ?: emptySet()
+                        val firstDev = bonded.firstOrNull()
+                        if (firstDev != null) {
+                            hidDevice?.connect(firstDev)
+                        }
+                    }
+                } catch (e: Exception) {
+                    // Ignore
+                }
+                notifyPairedDevicesChanged()
             }
         }
 
@@ -138,6 +267,8 @@ class MainActivity : FlutterActivity(), MethodChannel.MethodCallHandler, EventCh
             if (profile == BluetoothProfile.HID_DEVICE) {
                 hidDevice = null
                 isRegistered = false
+                connectedHostDevice = null
+                notifyPairedDevicesChanged()
             }
         }
     }
@@ -148,6 +279,8 @@ class MainActivity : FlutterActivity(), MethodChannel.MethodCallHandler, EventCh
         val bm = getSystemService(Context.BLUETOOTH_SERVICE) as? BluetoothManager
         bluetoothAdapter = bm?.adapter
 
+        registerBluetoothReceiver()
+
         if (hasRequiredPermissions()) {
             bindHidProfile()
         }
@@ -157,6 +290,37 @@ class MainActivity : FlutterActivity(), MethodChannel.MethodCallHandler, EventCh
 
         EventChannel(flutterEngine.dartExecutor.binaryMessenger, EVENT_CHANNEL)
             .setStreamHandler(this)
+    }
+
+    private fun registerBluetoothReceiver() {
+        if (isReceiverRegistered) return
+        val filter = IntentFilter().apply {
+            addAction(BluetoothDevice.ACTION_BOND_STATE_CHANGED)
+            addAction(BluetoothDevice.ACTION_ACL_CONNECTED)
+            addAction(BluetoothDevice.ACTION_ACL_DISCONNECTED)
+            addAction(BluetoothAdapter.ACTION_STATE_CHANGED)
+        }
+        registerReceiver(bluetoothReceiver, filter)
+        isReceiverRegistered = true
+    }
+
+    private fun notifyPairedDevicesChanged() {
+        runOnUiThread {
+            try {
+                val bonded = bluetoothAdapter?.bondedDevices ?: emptySet()
+                val list = bonded.map { dev ->
+                    mapOf("name" to (dev.name ?: "Unknown Host"), "address" to dev.address)
+                }
+                eventSink?.success(
+                    mapOf(
+                        "event" to "paired_devices_changed",
+                        "devices" to list
+                    )
+                )
+            } catch (e: Exception) {
+                // Non-fatal
+            }
+        }
     }
 
     private fun hasRequiredPermissions(): Boolean {
@@ -335,9 +499,37 @@ class MainActivity : FlutterActivity(), MethodChannel.MethodCallHandler, EventCh
                     result.success(emptyList<Map<String, String>>())
                 }
             }
+            "getConnectedHost" -> {
+                try {
+                    val connected = hidDevice?.getConnectedDevices() ?: emptyList()
+                    val dev = connectedHostDevice ?: connected.firstOrNull()
+                    if (dev != null) {
+                        connectedHostDevice = dev
+                        result.success(
+                            mapOf(
+                                "name" to (dev.name ?: "Unknown PC Host"),
+                                "address" to dev.address
+                            )
+                        )
+                    } else {
+                        result.success(null)
+                    }
+                } catch (e: Exception) {
+                    result.success(null)
+                }
+            }
+            "openBluetoothSettings" -> {
+                try {
+                    val intent = Intent(android.provider.Settings.ACTION_BLUETOOTH_SETTINGS)
+                    startActivity(intent)
+                    result.success(true)
+                } catch (e: Exception) {
+                    result.error("FAILED", e.message, null)
+                }
+            }
             "connectHost" -> {
                 val address = call.argument<String>("address")
-                if (address.isNullOrEmpty() || hidDevice == null) {
+                if (address.isNullOrEmpty()) {
                     result.success(false)
                     return
                 }
@@ -347,8 +539,8 @@ class MainActivity : FlutterActivity(), MethodChannel.MethodCallHandler, EventCh
                         result.success(false)
                         return
                     }
-                    val ok = hidDevice?.connect(device) ?: false
-                    result.success(ok)
+                    ensureRegisteredAndConnect(device)
+                    result.success(true)
                 } catch (e: Exception) {
                     result.error("CONNECT_FAILED", e.message, null)
                 }
@@ -356,6 +548,8 @@ class MainActivity : FlutterActivity(), MethodChannel.MethodCallHandler, EventCh
             "disconnectHost" -> {
                 if (connectedHostDevice != null && hidDevice != null) {
                     hidDevice?.disconnect(connectedHostDevice)
+                    connectedHostDevice = null
+                    notifyPairedDevicesChanged()
                     result.success(true)
                 } else {
                     result.success(false)
@@ -382,7 +576,8 @@ class MainActivity : FlutterActivity(), MethodChannel.MethodCallHandler, EventCh
                 }
             }
             "isHostConnected" -> {
-                result.success(connectedHostDevice != null)
+                val connected = hidDevice?.getConnectedDevices() ?: emptyList()
+                result.success(connectedHostDevice != null || connected.isNotEmpty())
             }
             "startForegroundService" -> {
                 startForegroundServiceInternal()
@@ -477,6 +672,7 @@ class MainActivity : FlutterActivity(), MethodChannel.MethodCallHandler, EventCh
 
     override fun onListen(arguments: Any?, events: EventChannel.EventSink?) {
         this.eventSink = events
+        notifyPairedDevicesChanged()
     }
 
     override fun onCancel(arguments: Any?) {
@@ -485,6 +681,14 @@ class MainActivity : FlutterActivity(), MethodChannel.MethodCallHandler, EventCh
 
     override fun onDestroy() {
         super.onDestroy()
+        if (isReceiverRegistered) {
+            try {
+                unregisterReceiver(bluetoothReceiver)
+            } catch (e: Exception) {
+                // Ignore
+            }
+            isReceiverRegistered = false
+        }
         stopForegroundServiceInternal()
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
             hidDevice?.unregisterApp()

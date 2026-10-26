@@ -35,6 +35,7 @@ abstract class IBluetoothHidService {
   Stream<HidConnectionStatus> get connectionStatusStream;
   HidConnectionStatus get currentStatus;
   BluetoothHostDevice? get connectedHost;
+  List<BluetoothHostDevice> get pairedDevices;
 
   Future<bool> isSupported();
   Future<bool> hasPermissions();
@@ -49,14 +50,17 @@ abstract class IBluetoothHidService {
   });
   Future<bool> unregisterApp();
   Future<List<BluetoothHostDevice>> getPairedDevices();
+  Future<BluetoothHostDevice?> getConnectedHost();
   Future<bool> connectHost(String address);
   Future<bool> disconnectHost();
+  Future<bool> openBluetoothSettings();
+  Future<void> refreshState();
   Future<bool> sendRawReport(List<int> report);
   Future<bool> sendEmergencyRelease();
   Future<bool> sendKeyPress(int hidCode, {int modifiers = 0});
   Future<bool> sendKeyChord({required int hidCode, bool ctrl = false, bool alt = false, bool shift = false, bool meta = false});
   Future<bool> typeCharacter(String char);
-  Future<void> dispose();
+  void dispose();
 }
 
 /// Standard USB HID Keyboard Scancodes
@@ -174,7 +178,7 @@ class HidScancodes {
 }
 
 /// Production Bluetooth HID Service communicating with Android native BluetoothHidDevice.
-class BluetoothHidService implements IBluetoothHidService {
+class BluetoothHidService extends ChangeNotifier implements IBluetoothHidService {
   static const MethodChannel _methodChannel =
       MethodChannel('dev.codeflow.app/bluetooth_hid');
   static const EventChannel _eventChannel =
@@ -186,9 +190,11 @@ class BluetoothHidService implements IBluetoothHidService {
 
   HidConnectionStatus _currentStatus = HidConnectionStatus.unregistered;
   BluetoothHostDevice? _connectedHost;
+  List<BluetoothHostDevice> _pairedDevices = [];
 
   BluetoothHidService() {
     _initEventListener();
+    refreshState();
   }
 
   @override
@@ -200,6 +206,9 @@ class BluetoothHidService implements IBluetoothHidService {
 
   @override
   BluetoothHostDevice? get connectedHost => _connectedHost;
+
+  @override
+  List<BluetoothHostDevice> get pairedDevices => List.unmodifiable(_pairedDevices);
 
   void _initEventListener() {
     // Only listen on Android where the native channel is supported
@@ -231,12 +240,21 @@ class BluetoothHidService implements IBluetoothHidService {
                 break;
             }
             _statusController.add(_currentStatus);
+            notifyListeners();
           } else if (eventType == 'registration_state_changed') {
             final registered = event['registered'] as bool? ?? false;
             _currentStatus = registered
                 ? HidConnectionStatus.registered
                 : HidConnectionStatus.unregistered;
             _statusController.add(_currentStatus);
+            notifyListeners();
+          } else if (eventType == 'paired_devices_changed') {
+            final list = event['devices'] as List? ?? [];
+            _pairedDevices = list
+                .whereType<Map<dynamic, dynamic>>()
+                .map((m) => BluetoothHostDevice.fromMap(m))
+                .toList();
+            notifyListeners();
           }
         }
       }, onError: (Object err) {
@@ -246,6 +264,57 @@ class BluetoothHidService implements IBluetoothHidService {
       // Non-Android platforms (iOS / Desktop / Web)
       _currentStatus = HidConnectionStatus.unsupported;
       _statusController.add(_currentStatus);
+      notifyListeners();
+    }
+  }
+
+  @override
+  Future<void> refreshState() async {
+    if (kIsWeb || !Platform.isAndroid) return;
+    try {
+      final paired = await getPairedDevices();
+      _pairedDevices = paired;
+      final connected = await getConnectedHost();
+      if (connected != null) {
+        _connectedHost = connected;
+        _currentStatus = HidConnectionStatus.connected;
+      } else if (_currentStatus == HidConnectionStatus.connected) {
+        _currentStatus = HidConnectionStatus.disconnected;
+        _connectedHost = null;
+      }
+      notifyListeners();
+    } catch (e) {
+      debugPrint('Error refreshing HID state: $e');
+    }
+  }
+
+  @override
+  Future<BluetoothHostDevice?> getConnectedHost() async {
+    if (kIsWeb || !Platform.isAndroid) return _connectedHost;
+    try {
+      final res = await _methodChannel
+          .invokeMapMethod<dynamic, dynamic>('getConnectedHost');
+      if (res != null) {
+        _connectedHost = BluetoothHostDevice.fromMap(res);
+        return _connectedHost;
+      }
+      return null;
+    } catch (e) {
+      debugPrint('Error getting connected host: $e');
+      return null;
+    }
+  }
+
+  @override
+  Future<bool> openBluetoothSettings() async {
+    if (kIsWeb || !Platform.isAndroid) return false;
+    try {
+      final res =
+          await _methodChannel.invokeMethod<bool>('openBluetoothSettings');
+      return res ?? false;
+    } catch (e) {
+      debugPrint('Error opening Bluetooth settings: $e');
+      return false;
     }
   }
 
@@ -374,12 +443,18 @@ class BluetoothHidService implements IBluetoothHidService {
   @override
   Future<bool> connectHost(String address) async {
     if (kIsWeb || !Platform.isAndroid) return false;
+    _currentStatus = HidConnectionStatus.connecting;
+    notifyListeners();
     try {
       final res = await _methodChannel
           .invokeMethod<bool>('connectHost', {'address': address});
+      await Future.delayed(const Duration(milliseconds: 300));
+      await refreshState();
       return res ?? false;
     } catch (e) {
       debugPrint('Error connecting host: $e');
+      _currentStatus = HidConnectionStatus.disconnected;
+      notifyListeners();
       return false;
     }
   }
@@ -387,8 +462,13 @@ class BluetoothHidService implements IBluetoothHidService {
   @override
   Future<bool> disconnectHost() async {
     if (kIsWeb || !Platform.isAndroid) return false;
+    _currentStatus = HidConnectionStatus.disconnecting;
+    notifyListeners();
     try {
       final res = await _methodChannel.invokeMethod<bool>('disconnectHost');
+      _connectedHost = null;
+      _currentStatus = HidConnectionStatus.disconnected;
+      notifyListeners();
       return res ?? false;
     } catch (e) {
       debugPrint('Error disconnecting host: $e');
@@ -463,8 +543,9 @@ class BluetoothHidService implements IBluetoothHidService {
   }
 
   @override
-  Future<void> dispose() async {
-    await _eventSubscription?.cancel();
-    await _statusController.close();
+  void dispose() {
+    _eventSubscription?.cancel();
+    _statusController.close();
+    super.dispose();
   }
 }
