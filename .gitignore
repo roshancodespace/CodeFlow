@@ -1,0 +1,38 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+env/
+venv/
+*_venv/
+build/
+dist/
+*.egg-info/
+.eggs/
+
+# Flutter / Dart
+.dart_tool/
+.flutter-plugins
+.flutter-plugins-dependencies
+.packages
+codeflow_app/.dart_tool/
+codeflow_app/.flutter-plugins
+codeflow_app/.flutter-plugins-dependencies
+codeflow_app/build/
+codeflow_app/.packages
+
+# Build artifacts
+release/
+release_assets/
+release_apk/
+*.apk
+*.aab
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+.DS_Store

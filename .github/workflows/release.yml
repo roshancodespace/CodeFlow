@@ -1,0 +1,278 @@
+name: Build & Release CodeFlow
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Version tag (e.g. v1.0.0). If empty, auto-detects from VERSION file or bumps tag.'
+        required: false
+        default: ''
+      prerelease:
+        description: 'Mark as pre-release'
+        type: boolean
+        default: false
+  push:
+    tags:
+      - 'v*'
+
+permissions:
+  contents: write
+
+jobs:
+  version-check:
+    name: Resolve Version & Tag
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.resolve_version.outputs.version }}
+      raw_version: ${{ steps.resolve_version.outputs.raw_version }}
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Resolve Version Tag
+        id: resolve_version
+        run: |
+          set -e
+          INPUT_VERSION="${{ github.event.inputs.version }}"
+          
+          if [ -n "$INPUT_VERSION" ]; then
+            # Ensure starts with 'v'
+            if [[ ! "$INPUT_VERSION" =~ ^v ]]; then
+              TAG_NAME="v$INPUT_VERSION"
+            else
+              TAG_NAME="$INPUT_VERSION"
+            fi
+            RAW_VERSION="${TAG_NAME#v}"
+          elif [ "${{ github.ref_type }}" = "tag" ]; then
+            TAG_NAME="${{ github.ref_name }}"
+            RAW_VERSION="${TAG_NAME#v}"
+          else
+            # Read from VERSION file
+            FILE_VER="1.0.0"
+            if [ -f "VERSION" ]; then
+              FILE_VER=$(cat VERSION | tr -d '[:space:]')
+            fi
+            
+            TAG_NAME="v$FILE_VER"
+            RAW_VERSION="$FILE_VER"
+            
+            # Check if tag already exists in repo
+            if git rev-parse "$TAG_NAME" >/dev/null 2>&1; then
+              echo "Tag $TAG_NAME already exists, calculating next patch version..."
+              IFS='.' read -r major minor patch <<< "$RAW_VERSION"
+              patch=$((patch + 1))
+              RAW_VERSION="$major.$minor.$patch"
+              TAG_NAME="v$RAW_VERSION"
+            fi
+            
+            echo "Auto-creating new tag: $TAG_NAME"
+            git config user.name "github-actions[bot]"
+            git config user.email "github-actions[bot]@users.noreply.github.com"
+            git tag -a "$TAG_NAME" -m "Release $TAG_NAME"
+            git push origin "$TAG_NAME" || true
+          fi
+          
+          echo "Resolved Tag: $TAG_NAME"
+          echo "Resolved Version: $RAW_VERSION"
+          echo "version=$TAG_NAME" >> $GITHUB_OUTPUT
+          echo "raw_version=$RAW_VERSION" >> $GITHUB_OUTPUT
+
+  build-companion-windows:
+    name: Build Companion (Windows x64)
+    needs: version-check
+    runs-on: windows-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: 'pip'
+
+      - name: Install Dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r companion/requirements.txt
+          pip install pyinstaller
+
+      - name: Build Executable
+        run: |
+          python companion/build_executable.py
+
+      - name: Upload Windows Artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: companion-windows
+          path: companion/release/*
+          if-no-files-found: error
+
+  build-companion-linux:
+    name: Build Companion (Linux x64)
+    needs: version-check
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: 'pip'
+
+      - name: Install Dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r companion/requirements.txt
+          pip install pyinstaller
+
+      - name: Run Unit Tests
+        run: |
+          python companion/test_companion.py
+
+      - name: Build Executable
+        run: |
+          python companion/build_executable.py
+
+      - name: Upload Linux Artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: companion-linux
+          path: companion/release/*
+          if-no-files-found: error
+
+  build-companion-macos:
+    name: Build Companion (macOS)
+    needs: version-check
+    runs-on: macos-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: 'pip'
+
+      - name: Install Dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r companion/requirements.txt
+          pip install pyinstaller
+
+      - name: Build Executable
+        run: |
+          python companion/build_executable.py
+
+      - name: Upload macOS Artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: companion-macos
+          path: companion/release/*
+          if-no-files-found: error
+
+  build-mobile-android:
+    name: Build Mobile App (Android APK)
+    needs: version-check
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: 'temurin'
+          java-version: '17'
+
+      - name: Set up Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          channel: 'stable'
+          cache: true
+
+      - name: Install Dependencies
+        working-directory: codeflow_app
+        run: flutter pub get
+
+      - name: Run Flutter Tests
+        working-directory: codeflow_app
+        run: flutter test
+
+      - name: Build Android APK
+        working-directory: codeflow_app
+        run: flutter build apk --release
+
+      - name: Rename APK
+        run: |
+          mkdir -p release_apk
+          cp codeflow_app/build/app/outputs/flutter-apk/app-release.apk "release_apk/CodeFlow-Android-${{ needs.version-check.outputs.version }}.apk"
+
+      - name: Upload Android APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: mobile-android
+          path: release_apk/*
+          if-no-files-found: error
+
+  publish-release:
+    name: Publish GitHub Release
+    needs: [version-check, build-companion-windows, build-companion-linux, build-companion-macos, build-mobile-android]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Download Windows Artifacts
+        uses: actions/download-artifact@v4
+        with:
+          name: companion-windows
+          path: release_assets/
+
+      - name: Download Linux Artifacts
+        uses: actions/download-artifact@v4
+        with:
+          name: companion-linux
+          path: release_assets/
+
+      - name: Download macOS Artifacts
+        uses: actions/download-artifact@v4
+        with:
+          name: companion-macos
+          path: release_assets/
+
+      - name: Download Android Artifacts
+        uses: actions/download-artifact@v4
+        with:
+          name: mobile-android
+          path: release_assets/
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ needs.version-check.outputs.version }}
+          name: "CodeFlow ${{ needs.version-check.outputs.version }}"
+          files: release_assets/*
+          prerelease: ${{ github.event.inputs.prerelease || false }}
+          generate_release_notes: true
+          body: |
+            ## 🚀 CodeFlow Release ${{ needs.version-check.outputs.version }}
+
+            ### 💻 PC Companion Downloads (Zero Python Required)
+            - **Windows**: [codeflow-companion-windows-x64.exe](codeflow-companion-windows-x64.exe) or [.zip](codeflow-companion-windows-x64.zip) (Double-click to start!)
+            - **Linux**: [codeflow-companion-linux-x64.tar.gz](codeflow-companion-linux-x64.tar.gz) or standalone binary
+            - **macOS**: [codeflow-companion-darwin-x64.tar.gz](codeflow-companion-darwin-x64.tar.gz)
+
+            ### 📱 Mobile App
+            - **Android APK**: [CodeFlow-Android-${{ needs.version-check.outputs.version }}.apk](CodeFlow-Android-${{ needs.version-check.outputs.version }}.apk)
+
+            ---
+            ### ⚡ Quick Start for Regular Users
+            1. **On your PC**: Download and run `codeflow-companion` (it automatically opens your browser dashboard showing your PC is ready).
+            2. **On your Phone**: Install `CodeFlow-Android.apk`.
+            3. **Connect**: Both devices on the same Wi-Fi will auto-discover. Pair Bluetooth in CodeFlow settings, and start live streaming and code automation!
