@@ -440,6 +440,109 @@ class ScreenCaptureManager:
             await asyncio.sleep(sleep_time)
 
 
+class FirewallManager:
+    """Detects and helps automatically configure host firewall for zero-friction LAN streaming."""
+
+    @staticmethod
+    def ensure_ports_open(port: int = 8090) -> Dict[str, Any]:
+        """Detect active firewall and attempt to allow companion streaming & mDNS ports."""
+        status = {
+            "firewall_name": "None / Unrestricted",
+            "ports_open": True,
+            "auto_configured": False,
+            "hint": None,
+        }
+
+        system = platform.system()
+        if system == "Linux":
+            # 1. firewalld
+            if shutil.which("firewall-cmd"):
+                try:
+                    res = subprocess.run(
+                        ["firewall-cmd", "--state"],
+                        capture_output=True,
+                        text=True,
+                        timeout=5.0,
+                    )
+                    if res.returncode == 0 and "running" in res.stdout:
+                        status["firewall_name"] = "firewalld"
+                        q_res = subprocess.run(
+                            ["firewall-cmd", f"--query-port={port}/tcp"],
+                            capture_output=True,
+                            text=True,
+                            timeout=5.0,
+                        )
+                        if q_res.returncode == 0 and "yes" in q_res.stdout:
+                            status["ports_open"] = True
+                        else:
+                            # Try to open automatically via polkit (often succeeds for local desktop user)
+                            add_res = subprocess.run(
+                                [
+                                    "firewall-cmd",
+                                    f"--add-port={port}/tcp",
+                                    "--add-port=5353/udp",
+                                ],
+                                capture_output=True,
+                                text=True,
+                                timeout=5.0,
+                            )
+                            if add_res.returncode == 0:
+                                status["ports_open"] = True
+                                status["auto_configured"] = True
+                                logger.info(
+                                    f"Automatically opened LAN ports in firewalld: {port}/tcp & 5353/udp"
+                                )
+                                subprocess.run(
+                                    [
+                                        "firewall-cmd",
+                                        "--permanent",
+                                        f"--add-port={port}/tcp",
+                                        "--add-port=5353/udp",
+                                    ],
+                                    capture_output=True,
+                                    timeout=5.0,
+                                )
+                            else:
+                                status["ports_open"] = False
+                                status["hint"] = (
+                                    f"sudo firewall-cmd --add-port={port}/tcp --add-port=5353/udp"
+                                )
+                                logger.warning(
+                                    f"firewalld is active and port {port} is not open! "
+                                    f"If your mobile phone cannot connect, run: {status['hint']}"
+                                )
+                except Exception as e:
+                    logger.debug(f"firewalld check error: {e}")
+
+            # 2. UFW
+            elif shutil.which("ufw"):
+                try:
+                    res = subprocess.run(
+                        ["ufw", "status"],
+                        capture_output=True,
+                        text=True,
+                        timeout=3.0,
+                    )
+                    if res.returncode == 0 and "Status: active" in res.stdout:
+                        status["firewall_name"] = "UFW"
+                        if f"{port}" not in res.stdout:
+                            status["ports_open"] = False
+                            status["hint"] = f"sudo ufw allow {port}/tcp"
+                            logger.warning(
+                                f"UFW is active. If your phone cannot connect, run: {status['hint']}"
+                            )
+                except Exception:
+                    pass
+
+        elif system == "Windows":
+            status["firewall_name"] = "Windows Defender"
+            status["hint"] = (
+                f'netsh advfirewall firewall add rule name="CodeFlow Companion" dir=in action=allow protocol=TCP localport={port}'
+            )
+
+        return status
+
+
 class CodeFlowCompanionServer:
     """Async HTTP API, MJPEG Stream, and Workspace Management Server."""
 
@@ -476,6 +579,9 @@ class CodeFlowCompanionServer:
             jpeg_quality=quality,
             crop=crop,
         )
+
+        # Check and auto-configure local firewall
+        self.firewall_status = FirewallManager.ensure_ports_open(self.port)
 
         self.app = web.Application(middlewares=[self._auth_middleware])
         self._setup_routes()
@@ -527,7 +633,22 @@ class CodeFlowCompanionServer:
         """User-friendly host dashboard."""
         local_ip = self._get_local_ip()
         active_win = ActiveWindowDetector.get_active_window_title() or "None / Unsupported"
-        
+        local_ip = self._get_local_ip()
+
+        fw_color = "#10b981" if self.firewall_status.get("ports_open") else "#ef4444"
+        fw_text = f"Allowed ({self.firewall_status.get('firewall_name')})" if self.firewall_status.get("ports_open") else f"Blocked by {self.firewall_status.get('firewall_name')}"
+        fw_alert = ""
+        if not self.firewall_status.get("ports_open") and self.firewall_status.get("hint"):
+            fw_alert = f"""
+        <div class="card" style="border-color: #ef4444; background: #fef2f2; color: #991b1b;">
+            <div style="font-weight: 600; font-size: 14px;">⚠️ Firewall Warning: Mobile Devices May Be Blocked</div>
+            <p style="font-size: 13px; margin: 6px 0 10px 0;">Your system firewall ({self.firewall_status.get('firewall_name')}) is active and may block incoming connections from your phone. Run this terminal command to allow access:</p>
+            <div class="ip-box" style="font-size: 13px; background: #ffffff; color: #111827;">
+                <span>{self.firewall_status.get('hint')}</span>
+                <button class="btn" onclick="navigator.clipboard.writeText('{self.firewall_status.get('hint')}'); alert('Copied command!')">Copy Command</button>
+            </div>
+        </div>"""
+
         html = f"""<!DOCTYPE html>
 <html lang="en">
 <head>
@@ -574,7 +695,7 @@ class CodeFlowCompanionServer:
             display: flex;
             align-items: center;
             gap: 6px;
-            font-size: 13px;
+            font-size: 12px;
             font-weight: 600;
             color: var(--success);
             background: #ecfdf5;
@@ -656,17 +777,27 @@ class CodeFlowCompanionServer:
             </div>
         </div>
 
+        {fw_alert}
+
         <div class="card">
-            <div style="font-weight: 600; font-size: 14px;">Connect from CodeFlow Mobile:</div>
-            <p style="font-size: 13px; color: var(--text-sub); margin: 6px 0 10px 0;">
-                Your mobile app automatically detects this PC via mDNS. If prompted, use this LAN address:
-            </p>
-            <div class="ip-box">
-                <span id="ipText">{local_ip}:{self.port}</span>
-                <button class="btn" onclick="navigator.clipboard.writeText('{local_ip}:{self.port}'); alert('Copied address!')">Copy</button>
-            </div>
-            <div style="font-size: 12px; color: var(--text-sub);">
-                Localhost: <a href="http://127.0.0.1:{self.port}/info" target="_blank">http://127.0.0.1:{self.port}</a>
+            <div style="display: flex; gap: 20px; align-items: center; justify-content: space-between;">
+                <div style="flex: 1;">
+                    <div style="font-weight: 600; font-size: 14px;">Connect from CodeFlow Mobile:</div>
+                    <p style="font-size: 13px; color: var(--text-sub); margin: 6px 0 10px 0;">
+                        Your mobile app automatically detects this PC via mDNS. If prompted, use this LAN address:
+                    </p>
+                    <div class="ip-box">
+                        <span id="ipText">{local_ip}:{self.port}</span>
+                        <button class="btn" onclick="navigator.clipboard.writeText('{local_ip}:{self.port}'); alert('Copied address!')">Copy</button>
+                    </div>
+                    <div style="font-size: 12px; color: var(--text-sub);">
+                        Localhost: <a href="http://127.0.0.1:{self.port}/info" target="_blank">http://127.0.0.1:{self.port}</a>
+                    </div>
+                </div>
+                <div style="text-align: center;">
+                    <img src="https://api.qrserver.com/v1/create-qr-code/?size=110x110&margin=4&data=http://{local_ip}:{self.port}" width="110" height="110" alt="Scan QR Code" style="border-radius: 6px; border: 1px solid var(--border);" onerror="this.style.display='none'" />
+                    <div style="font-size: 11px; color: var(--text-sub); margin-top: 4px;">Scan with phone</div>
+                </div>
             </div>
         </div>
 
@@ -679,6 +810,7 @@ class CodeFlowCompanionServer:
                 <div class="meta-row"><span>Workspace Directory:</span><b style="max-width: 350px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">{self.workspace_dir}</b></div>
                 <div class="meta-row"><span>Target FPS:</span><b>{self.capture_mgr.target_fps} FPS</b></div>
                 <div class="meta-row"><span>Capture Engine:</span><b>{self.capture_mgr.backend}</b></div>
+                <div class="meta-row"><span>LAN Firewall:</span><b style="color: {fw_color};">{fw_text}</b></div>
             </div>
         </div>
 
@@ -1035,6 +1167,11 @@ class CodeFlowCompanionServer:
         logger.info(f" Local Access:   http://127.0.0.1:{self.port}")
         logger.info(f" Network Access: http://{local_ip}:{self.port}")
         logger.info(f" Workspace Dir:  {self.workspace_dir}")
+        if self.firewall_status.get("firewall_name") != "None / Unrestricted":
+            fw_state = "OPEN" if self.firewall_status.get("ports_open") else "BLOCKED"
+            logger.info(f" LAN Firewall:   {self.firewall_status.get('firewall_name')} [{fw_state}]")
+            if not self.firewall_status.get("ports_open") and self.firewall_status.get("hint"):
+                logger.warning(f" -> Allow mobile access with: {self.firewall_status.get('hint')}")
         if self.token:
             logger.info(f" Auth Token:     {self.token}")
         else:
