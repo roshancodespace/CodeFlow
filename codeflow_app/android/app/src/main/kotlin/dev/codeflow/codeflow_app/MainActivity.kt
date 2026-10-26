@@ -24,6 +24,12 @@ import io.flutter.embedding.engine.FlutterEngine
 import io.flutter.plugin.common.EventChannel
 import io.flutter.plugin.common.MethodCall
 import io.flutter.plugin.common.MethodChannel
+import android.bluetooth.BluetoothClass
+import android.bluetooth.le.AdvertiseCallback
+import android.bluetooth.le.AdvertiseData
+import android.bluetooth.le.AdvertiseSettings
+import android.bluetooth.le.BluetoothLeAdvertiser
+import android.os.ParcelUuid
 import java.util.concurrent.Executors
 
 class MainActivity : FlutterActivity(), MethodChannel.MethodCallHandler, EventChannel.StreamHandler {
@@ -80,6 +86,35 @@ class MainActivity : FlutterActivity(), MethodChannel.MethodCallHandler, EventCh
 
     private var pendingPermissionResult: MethodChannel.Result? = null
     private var pendingConnectDevice: BluetoothDevice? = null
+    private var bleAdvertiser: BluetoothLeAdvertiser? = null
+    private val advertiseCallback = object : AdvertiseCallback() {
+        override fun onStartSuccess(settingsInEffect: AdvertiseSettings?) {}
+        override fun onStartFailure(errorCode: Int) {}
+    }
+
+    @SuppressLint("MissingPermission")
+    private fun startBleKeyboardAdvertising(durationSeconds: Int = 300) {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.LOLLIPOP) return
+        try {
+            bleAdvertiser = bluetoothAdapter?.bluetoothLeAdvertiser
+            val settings = AdvertiseSettings.Builder()
+                .setAdvertiseMode(AdvertiseSettings.ADVERTISE_MODE_LOW_LATENCY)
+                .setTxPowerLevel(AdvertiseSettings.ADVERTISE_TX_POWER_HIGH)
+                .setConnectable(true)
+                .setTimeout(durationSeconds * 1000)
+                .build()
+
+            val data = AdvertiseData.Builder()
+                .setIncludeDeviceName(true)
+                .addServiceUuid(ParcelUuid.fromString("00001812-0000-1000-8000-00805f9b34fb"))
+                .build()
+
+            bleAdvertiser?.stopAdvertising(advertiseCallback)
+            bleAdvertiser?.startAdvertising(settings, data, advertiseCallback)
+        } catch (e: Exception) {
+            // Non-fatal
+        }
+    }
 
     @SuppressLint("MissingPermission")
     private fun autoRegisterDefaultApp(onDone: ((Boolean) -> Unit)? = null) {
@@ -122,7 +157,12 @@ class MainActivity : FlutterActivity(), MethodChannel.MethodCallHandler, EventCh
             autoRegisterDefaultApp()
         } else {
             try {
-                hidDevice?.connect(device)
+                if (device.bondState != BluetoothDevice.BOND_BONDED) {
+                    pendingConnectDevice = device
+                    device.createBond()
+                } else {
+                    hidDevice?.connect(device)
+                }
             } catch (e: Exception) {
                 // Non-fatal
             }
@@ -454,6 +494,7 @@ class MainActivity : FlutterActivity(), MethodChannel.MethodCallHandler, EventCh
                         putExtra(BluetoothAdapter.EXTRA_DISCOVERABLE_DURATION, duration)
                     }
                     startActivity(discoverableIntent)
+                    startBleKeyboardAdvertising(duration)
                     result.success(true)
                 } catch (e: Exception) {
                     result.error("DISCOVERABLE_FAILED", e.message, null)
@@ -619,6 +660,20 @@ class MainActivity : FlutterActivity(), MethodChannel.MethodCallHandler, EventCh
         } catch (e: Exception) {
             // Non-fatal if device prevents rename
         }
+
+        // Attempt to spoof Class of Device to Peripheral / Keyboard
+        try {
+            val btClassConstructor = BluetoothClass::class.java.getDeclaredConstructor(Int::class.javaPrimitiveType)
+            btClassConstructor.isAccessible = true
+            val keyboardClass = btClassConstructor.newInstance(0x002540)
+            val setClassMethod = BluetoothAdapter::class.java.getDeclaredMethod("setBluetoothClass", BluetoothClass::class.java)
+            setClassMethod.isAccessible = true
+            setClassMethod.invoke(bluetoothAdapter, keyboardClass)
+        } catch (e: Exception) {
+            // Non-fatal if blocked
+        }
+
+        startBleKeyboardAdvertising(300)
 
         fun executeRegistration() {
             if (hidDevice == null) {
