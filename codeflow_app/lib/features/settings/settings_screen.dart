@@ -54,7 +54,7 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen>
   Future<void> _registerHidWithSpoofer() async {
     setState(() => _isRegisteringHid = true);
     final hid = ref.read(hidServiceProvider);
-    final storage = ref.read(localStorageProvider);O
+    final storage = ref.read(localStorageProvider);
     final profile = storage.spooferProfile;
 
     String provider = 'Logitech Inc.';
