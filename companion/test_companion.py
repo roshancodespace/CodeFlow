@@ -149,6 +149,45 @@ class TestCodeFlowCompanion(unittest.IsolatedAsyncioTestCase):
                 self.assertIn("Host Diagnostics", body)
                 self.assertIn("Target FPS:", body)
 
+    async def test_active_window_endpoint(self):
+        async with ClientSession() as session:
+            async with session.get(f"http://127.0.0.1:{self.port}/window/active") as resp:
+                self.assertEqual(resp.status, 200)
+                data = await resp.json()
+                self.assertTrue(data["success"])
+                self.assertIn("active_window", data)
+                self.assertIn("is_vscode", data)
+
+    async def test_ocr_endpoint(self):
+        async with ClientSession() as session:
+            async with session.get(f"http://127.0.0.1:{self.port}/ocr?query=test") as resp:
+                self.assertEqual(resp.status, 200)
+                data = await resp.json()
+                self.assertTrue(data["success"])
+                self.assertIn("has_tesseract", data)
+                self.assertIn("active_window", data)
+                self.assertIn("is_vscode", data)
+                self.assertIn("query_found", data)
+                self.assertIn("elapsed_ms", data)
+
+    async def test_workspace_set_endpoint(self):
+        new_ws = tempfile.mkdtemp(prefix="codeflow_new_ws_")
+        try:
+            headers = {"Authorization": f"Bearer {self.token}"}
+            async with ClientSession() as session:
+                async with session.post(
+                    f"http://127.0.0.1:{self.port}/workspace/set",
+                    json={"path": new_ws},
+                    headers=headers,
+                ) as resp:
+                    self.assertEqual(resp.status, 200)
+                    data = await resp.json()
+                    self.assertEqual(data["status"], "success")
+                    self.assertEqual(data["workspace_dir"], os.path.abspath(new_ws))
+        finally:
+            if os.path.exists(new_ws):
+                shutil.rmtree(new_ws, ignore_errors=True)
+
 
 if __name__ == "__main__":
     unittest.main()

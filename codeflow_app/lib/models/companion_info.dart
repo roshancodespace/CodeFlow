@@ -93,3 +93,38 @@ class CompanionInfo {
     );
   }
 }
+
+/// Result returned from companion /ocr screen analysis endpoint.
+@immutable
+class OcrResult {
+  final bool success;
+  final bool hasTesseract;
+  final String activeWindow;
+  final bool isVscode;
+  final String query;
+  final bool queryFound;
+  final String text;
+  final double elapsedMs;
+
+  const OcrResult({
+    required this.success,
+    required this.hasTesseract,
+    required this.activeWindow,
+    required this.isVscode,
+    required this.query,
+    required this.queryFound,
+    required this.text,
+    required this.elapsedMs,
+  });
+
+  factory OcrResult.fromJson(Map<String, dynamic> json) => OcrResult(
+    success: json['success'] as bool? ?? false,
+    hasTesseract: json['has_tesseract'] as bool? ?? false,
+    activeWindow: json['active_window'] as String? ?? '',
+    isVscode: json['is_vscode'] as bool? ?? false,
+    query: json['query'] as String? ?? '',
+    queryFound: json['query_found'] as bool? ?? false,
+    text: json['text'] as String? ?? '',
+    elapsedMs: (json['elapsed_ms'] as num?)?.toDouble() ?? 0.0,
+  );
+}

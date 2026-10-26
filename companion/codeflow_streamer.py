@@ -35,11 +35,13 @@ _bootstrap_venv()
 import argparse
 import asyncio
 import contextlib
+import difflib
 import hashlib
 import io
 import json
 import logging
 import platform
+import re
 import shutil
 import socket
 import subprocess
@@ -590,12 +592,20 @@ class CodeFlowCompanionServer:
         self.enable_mdns = enable_mdns
         self.start_time = time.time()
 
-        # Workspace directory security
-        self.workspace_dir = (
-            os.path.abspath(workspace_dir)
-            if workspace_dir
-            else os.path.abspath(os.getcwd())
-        )
+        # Workspace directory security: Auto-detect project root if launched inside companion/
+        if workspace_dir:
+            self.workspace_dir = os.path.abspath(workspace_dir)
+        else:
+            cwd = os.path.abspath(os.getcwd())
+            parent = os.path.dirname(cwd)
+            if os.path.basename(cwd) == "companion" and (
+                os.path.exists(os.path.join(parent, ".git"))
+                or os.path.exists(os.path.join(parent, "VERSION"))
+                or os.path.exists(os.path.join(parent, "codeflow_app"))
+            ):
+                self.workspace_dir = parent
+            else:
+                self.workspace_dir = cwd
         os.makedirs(self.workspace_dir, exist_ok=True)
         logger.info(f"Authorized workspace directory: {self.workspace_dir}")
 
@@ -620,8 +630,8 @@ class CodeFlowCompanionServer:
 
     @_safe_middleware
     async def _auth_middleware(self, request: web.Request, handler):
-        # Allow open access to dashboard, health, and info, but protect /workspace/transfer and optionally /stream
-        if request.path in ["/", "/health", "/info", "/config"]:
+        # Allow open access to dashboard, health, info, config, ocr, and window/active
+        if request.path in ["/", "/health", "/info", "/config", "/ocr", "/window/active"]:
             return await handler(request)
 
         # Check authentication if token is set
@@ -651,6 +661,9 @@ class CodeFlowCompanionServer:
         self.app.router.add_get("/health", self.handle_health)
         self.app.router.add_get("/info", self.handle_info)
         self.app.router.add_get("/config", self.handle_config)
+        self.app.router.add_get("/ocr", self.handle_ocr)
+        self.app.router.add_get("/window/active", self.handle_active_window)
+        self.app.router.add_post("/workspace/set", self.handle_workspace_set)
         self.app.router.add_get("/stream", self.handle_stream)
         self.app.router.add_get("/screenshot", self.handle_screenshot)
         self.app.router.add_post("/workspace/transfer", self.handle_workspace_transfer)
@@ -903,6 +916,7 @@ class CodeFlowCompanionServer:
                     "screenshot": True,
                     "workspace_transfer": True,
                     "active_window_detection": bool(active_window is not None),
+                    "ocr": bool(shutil.which("tesseract")),
                 },
             }
         )
@@ -947,6 +961,165 @@ class CodeFlowCompanionServer:
                 ),
             },
         )
+
+    async def handle_ocr(self, request: web.Request) -> web.Response:
+        """OCR-based screen analysis to verify active windows and open editor tabs."""
+        t_start = time.perf_counter()
+        query = request.query.get("query", "").strip()
+        region = request.query.get("region", "top").strip().lower()
+
+        # 1. Query active window title
+        active_window = ActiveWindowDetector.get_active_window_title() or ""
+        is_vscode = any(
+            term in active_window.lower()
+            for term in [
+                "visual studio code",
+                "code",
+                "vscodium",
+                "antigravity",
+                "cursor",
+                "windsurf",
+            ]
+        )
+
+        tesseract_bin = shutil.which("tesseract")
+        has_tesseract = bool(tesseract_bin)
+
+        # 2. Grab screen frame
+        frame = self.capture_mgr.latest_jpeg
+        if not frame:
+            for _ in range(10):
+                await asyncio.sleep(0.05)
+                frame = self.capture_mgr.latest_jpeg
+                if frame:
+                    break
+
+        ocr_text = ""
+        if frame and has_tesseract and Image:
+            loop = asyncio.get_running_loop()
+            try:
+                def _run_tesseract(jpeg_bytes: bytes, reg: str) -> str:
+                    img = Image.open(io.BytesIO(jpeg_bytes))
+                    w, h = img.size
+                    if reg == "top":
+                        # Crop top 35% where VS Code tabs, title bar, and command palette reside
+                        img = img.crop((0, 0, w, max(10, int(h * 0.35))))
+                    elif reg == "editor":
+                        img = img.crop((0, 0, w, max(10, int(h * 0.60))))
+
+                    buf = io.BytesIO()
+                    img.save(buf, format="PNG")
+                    png_data = buf.getvalue()
+
+                    res = subprocess.run(
+                        [tesseract_bin, "stdin", "stdout", "--psm", "6"],
+                        input=png_data,
+                        capture_output=True,
+                        timeout=3.0,
+                    )
+                    return res.stdout.decode("utf-8", errors="ignore")
+
+                ocr_text = await loop.run_in_executor(
+                    None, _run_tesseract, frame, region
+                )
+            except Exception as e:
+                logger.warning(f"OCR execution failed: {e}")
+
+        # 3. Match query against OCR text and active window title
+        query_found = False
+        if query:
+            query_found = self._fuzzy_match_query(query, ocr_text, active_window)
+        else:
+            query_found = bool(active_window)
+
+        elapsed_ms = round((time.perf_counter() - t_start) * 1000.0, 1)
+
+        return web.json_response(
+            {
+                "success": True,
+                "has_tesseract": has_tesseract,
+                "tesseract_path": tesseract_bin,
+                "active_window": active_window,
+                "is_vscode": is_vscode,
+                "query": query,
+                "query_found": query_found,
+                "text": ocr_text[:1200],
+                "elapsed_ms": elapsed_ms,
+                "timestamp": time.time(),
+            }
+        )
+
+    async def handle_active_window(self, request: web.Request) -> web.Response:
+        """Fast active window check without OCR."""
+        active_window = ActiveWindowDetector.get_active_window_title() or ""
+        is_vscode = any(
+            term in active_window.lower()
+            for term in [
+                "visual studio code",
+                "code",
+                "vscodium",
+                "antigravity",
+                "cursor",
+                "windsurf",
+            ]
+        )
+        return web.json_response(
+            {
+                "success": True,
+                "active_window": active_window,
+                "is_vscode": is_vscode,
+            }
+        )
+
+    async def handle_workspace_set(self, request: web.Request) -> web.Response:
+        """Update authorized workspace directory dynamically."""
+        try:
+            data = await request.json()
+            new_path = data.get("path")
+            if not new_path or not os.path.exists(new_path) or not os.path.isdir(new_path):
+                return web.json_response(
+                    {"error": f"Invalid or non-existent directory path: {new_path}"},
+                    status=400,
+                )
+            self.workspace_dir = os.path.abspath(new_path)
+            logger.info(f"Workspace directory updated to: {self.workspace_dir}")
+            return web.json_response(
+                {"status": "success", "workspace_dir": self.workspace_dir}
+            )
+        except Exception as e:
+            return web.json_response({"error": str(e)}, status=500)
+
+    @staticmethod
+    def _fuzzy_match_query(query: str, ocr_text: str, window_title: str) -> bool:
+        """Smart match query across window title, OCR text, and normalized tokens."""
+        if not query:
+            return True
+        clean_q = re.sub(r"[^a-zA-Z0-9]", "", query.lower())
+        if not clean_q:
+            return True
+
+        # Check window title first (fastest)
+        clean_win = re.sub(r"[^a-zA-Z0-9]", "", window_title.lower())
+        if query.lower() in window_title.lower() or clean_q in clean_win:
+            return True
+
+        # Check exact substring in OCR text
+        clean_ocr = re.sub(r"[^a-zA-Z0-9]", " ", ocr_text.lower())
+        if query.lower() in ocr_text.lower() or clean_q in re.sub(r"[^a-zA-Z0-9]", "", clean_ocr):
+            return True
+
+        # Fuzzy sequence matcher over word tokens
+        words = clean_ocr.split()
+        q_len = len(query)
+        combined = ""
+        for w in words:
+            combined += w
+            if len(combined) >= max(3, q_len - 2):
+                chunk = combined[-q_len - 4 :]
+                ratio = difflib.SequenceMatcher(None, clean_q, chunk).ratio()
+                if ratio >= 0.72:
+                    return True
+        return False
 
     async def handle_stream(self, request: web.Request) -> web.StreamResponse:
         """Continuous ultra-low-latency MJPEG stream."""

@@ -181,12 +181,12 @@ class OrchestratorController extends ChangeNotifier {
       ),
       WorkflowStep(
         title: isVsCode
-            ? 'VS Code Quick Open (Shortcuts)'
+            ? 'Command Panel & OCR Tab Verification'
             : (useDirect ? 'Companion Workspace Sync' : 'Toggle Terminal'),
         details: isVsCode
             ? (isMac
-                  ? 'Shortcut: Cmd + P (Quick Open) -> Select and focus editor file tab'
-                  : 'Shortcut: Ctrl + P (Quick Open) -> Select and focus editor file tab')
+                  ? 'Shortcut: Cmd + Shift + P -> File: New File -> OCR screen verify editor tab'
+                  : 'Shortcut: Ctrl + Shift + P -> File: New File -> OCR screen verify editor tab')
             : (useDirect
                   ? 'Direct workspace transfer via companion API'
                   : (isMac ? 'Shortcut: Cmd + `' : 'Shortcut: Ctrl + `')),
@@ -467,7 +467,7 @@ class OrchestratorController extends ChangeNotifier {
             );
             notifyListeners();
 
-            // 1. Ensure file exists on disk so Quick Open finds it
+            // 1. Ensure file exists on disk so VS Code and filesystem index it
             if (companionAvailable) {
               try {
                 await _fileTransferService.transferFile(
@@ -510,38 +510,114 @@ class OrchestratorController extends ChangeNotifier {
               await Future.delayed(const Duration(milliseconds: 300));
             }
 
-            // 2. Open file using VS Code Quick Open (Ctrl+P / Cmd+P)
+            // 2. Open Command Panel (Ctrl+Shift+P / Cmd+Shift+P) to create/open file
+            _state = _state.copyWith(
+              currentFileIndex: i,
+              currentOperation:
+                  'Command Panel: Creating ${file.relativePath}...',
+            );
+            notifyListeners();
+
             await _hidService.sendKeyChord(
               hidCode: HidScancodes.keyP,
               ctrl: !isMac,
               meta: isMac,
+              shift: true,
             );
             await Future.delayed(const Duration(milliseconds: 350));
 
-            // Type the relative path into the Quick Open palette
-            for (final ch in file.relativePath.split('')) {
+            // Type "File: New File" into the Command Palette
+            const newFileCmd = 'File: New File';
+            for (final ch in newFileCmd.split('')) {
               if (_isCancelled) break;
               await _hidService.typeCharacter(ch);
-              await Future.delayed(const Duration(milliseconds: 20));
+              await Future.delayed(const Duration(milliseconds: 18));
             }
             if (_isCancelled) break;
 
-            // Wait for VS Code search results to populate
-            await Future.delayed(const Duration(milliseconds: 300));
-
-            // Press Enter to open and focus file editor tab
+            await Future.delayed(const Duration(milliseconds: 250));
+            // Press Enter to confirm Command Palette selection
             await _hidService.sendKeyPress(HidScancodes.enter);
-            await Future.delayed(const Duration(milliseconds: 550));
+            await Future.delayed(const Duration(milliseconds: 400));
 
-            // 3. Clear existing editor buffer if starting from offset 0
-            if (startCharOffset == 0) {
+            // Type the relative file path into the input prompt
+            for (final ch in file.relativePath.split('')) {
+              if (_isCancelled) break;
+              await _hidService.typeCharacter(ch);
+              await Future.delayed(const Duration(milliseconds: 18));
+            }
+            if (_isCancelled) break;
+
+            await Future.delayed(const Duration(milliseconds: 250));
+            // Press Enter to create/open file and focus editor buffer
+            await _hidService.sendKeyPress(HidScancodes.enter);
+            await Future.delayed(const Duration(milliseconds: 600));
+
+            // 3. OCR Screen Capture Verification
+            if (companionAvailable && !_isCancelled) {
+              _state = _state.copyWith(
+                currentOperation:
+                    'OCR verifying screen tab for ${file.name}...',
+              );
+              notifyListeners();
+
+              bool ocrConfirmed = false;
+              for (int attempt = 0; attempt < 3; attempt++) {
+                if (_isCancelled) break;
+                final ocr = await _companionApi.getScreenOcr(
+                  host: host,
+                  port: port,
+                  token: token,
+                  query: file.name,
+                  region: 'top',
+                );
+                if (ocr != null && ocr.queryFound) {
+                  ocrConfirmed = true;
+                  _state = _state.copyWith(
+                    currentOperation:
+                        'OCR confirmed editor tab open: ${file.name}',
+                  );
+                  notifyListeners();
+                  break;
+                }
+                await Future.delayed(const Duration(milliseconds: 400));
+              }
+
+              // Fallback to Quick Open (Ctrl+P) if Command Palette did not switch tab
+              if (!ocrConfirmed && !_isCancelled) {
+                _state = _state.copyWith(
+                  currentOperation:
+                      'Quick Open fallback for ${file.name} (Ctrl+P)...',
+                );
+                notifyListeners();
+
+                await _hidService.sendKeyChord(
+                  hidCode: HidScancodes.keyP,
+                  ctrl: !isMac,
+                  meta: isMac,
+                );
+                await Future.delayed(const Duration(milliseconds: 300));
+
+                for (final ch in file.relativePath.split('')) {
+                  if (_isCancelled) break;
+                  await _hidService.typeCharacter(ch);
+                  await Future.delayed(const Duration(milliseconds: 16));
+                }
+                await Future.delayed(const Duration(milliseconds: 250));
+                await _hidService.sendKeyPress(HidScancodes.enter);
+                await Future.delayed(const Duration(milliseconds: 500));
+              }
+            }
+
+            // 4. Clear existing editor buffer if starting from offset 0
+            if (startCharOffset == 0 && !_isCancelled) {
               // Select all (Ctrl+A / Cmd+A)
               await _hidService.sendKeyChord(
                 hidCode: HidScancodes.keyA,
                 ctrl: !isMac,
                 meta: isMac,
               );
-              await Future.delayed(const Duration(milliseconds: 120));
+              await Future.delayed(const Duration(milliseconds: 140));
 
               // Backspace to clear buffer
               await _hidService.sendKeyPress(HidScancodes.backspace);

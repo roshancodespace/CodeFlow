@@ -23,6 +23,11 @@ class SourceFile {
     this.sha256,
   });
 
+  String get name =>
+      relativePath.contains('/')
+          ? relativePath.substring(relativePath.lastIndexOf('/') + 1)
+          : relativePath;
+
   bool get isCodeFile {
     if (isDirectory) return false;
     const codeExtensions = {
