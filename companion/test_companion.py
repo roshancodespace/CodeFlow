@@ -139,6 +139,16 @@ class TestCodeFlowCompanion(unittest.IsolatedAsyncioTestCase):
             ) as resp:
                 self.assertEqual(resp.status, 403)
 
+    async def test_dashboard_rendering(self):
+        async with ClientSession() as session:
+            async with session.get(f"http://127.0.0.1:{self.port}/") as resp:
+                self.assertEqual(resp.status, 200)
+                self.assertEqual(resp.content_type, "text/html")
+                body = await resp.text()
+                self.assertIn("CodeFlow Companion", body)
+                self.assertIn("Host Diagnostics", body)
+                self.assertIn("Target FPS:", body)
+
 
 if __name__ == "__main__":
     unittest.main()

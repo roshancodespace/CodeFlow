@@ -39,8 +39,10 @@ except ImportError:
 
 try:
     from zeroconf import IPVersion, ServiceInfo, Zeroconf
+    from zeroconf.asyncio import AsyncZeroconf
 except ImportError:
     Zeroconf = None
+    AsyncZeroconf = None
     ServiceInfo = None
     IPVersion = None
 
@@ -364,7 +366,7 @@ class CodeFlowCompanionServer:
         self.site: Optional[web.TCPSite] = None
 
         # mDNS state
-        self.zeroconf: Optional[Zeroconf] = None
+        self.zeroconf: Optional[AsyncZeroconf] = None
         self.service_info: Optional[ServiceInfo] = None
 
     @web.middleware
@@ -558,7 +560,7 @@ class CodeFlowCompanionServer:
                 <div class="meta-row"><span>Operating System:</span><b>{platform.system()} {platform.release()}</b></div>
                 <div class="meta-row"><span>Active Window:</span><b style="max-width: 350px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">{active_win}</b></div>
                 <div class="meta-row"><span>Workspace Directory:</span><b style="max-width: 350px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">{self.workspace_dir}</b></div>
-                <div class="meta-row"><span>Target FPS:</span><b>{self.capture_mgr.targetFps} FPS</b></div>
+                <div class="meta-row"><span>Target FPS:</span><b>{self.capture_mgr.target_fps} FPS</b></div>
             </div>
         </div>
 
@@ -841,17 +843,18 @@ class CodeFlowCompanionServer:
         except Exception:
             return "127.0.0.1"
 
-    def _register_mdns(self):
+    async def _register_mdns(self):
         """Broadcast mDNS service for zero-setup LAN discovery."""
-        if not self.enable_mdns or not Zeroconf or not ServiceInfo:
+        if not self.enable_mdns or not AsyncZeroconf or not ServiceInfo:
             logger.info("mDNS discovery disabled or zeroconf package not installed.")
             return
 
         try:
             local_ip = self._get_local_ip()
             hostname = socket.gethostname()
-            service_name = f"CodeFlow_{hostname}._{self.port}._codeflow._tcp.local."
+            clean_host = hostname.split(".")[0].replace(" ", "-")
             service_type = "_codeflow._tcp.local."
+            service_name = f"CodeFlow-{clean_host}-{self.port}.{service_type}"
 
             properties = {
                 "version": VERSION,
@@ -867,25 +870,30 @@ class CodeFlowCompanionServer:
                 addresses=[socket.inet_aton(local_ip)],
                 port=self.port,
                 properties=properties,
-                server=f"{hostname}.local.",
+                server=f"{clean_host}.local.",
             )
 
-            self.zeroconf = Zeroconf(ip_version=IPVersion.V4Only)
-            self.zeroconf.register_service(self.service_info)
+            self.zeroconf = AsyncZeroconf(ip_version=IPVersion.V4Only)
+            await self.zeroconf.async_register_service(
+                self.service_info,
+                allow_name_change=True,
+                cooperating_responders=True,
+            )
             logger.info(
                 f"mDNS service broadcasted: {service_name} on {local_ip}:{self.port}"
             )
         except Exception as e:
-            logger.warning(f"Failed to register mDNS service: {e}")
+            err_msg = str(e) if str(e) else type(e).__name__
+            logger.warning(f"Failed to register mDNS service: {err_msg}")
             self.zeroconf = None
             self.service_info = None
 
-    def _unregister_mdns(self):
+    async def _unregister_mdns(self):
         """Unregister mDNS service cleanly."""
         if self.zeroconf and self.service_info:
             try:
-                self.zeroconf.unregister_service(self.service_info)
-                self.zeroconf.close()
+                await self.zeroconf.async_unregister_service(self.service_info)
+                await self.zeroconf.async_close()
                 logger.info("mDNS service unregistered.")
             except Exception as e:
                 logger.debug(f"Error unregistering mDNS: {e}")
@@ -913,12 +921,12 @@ class CodeFlowCompanionServer:
             logger.info(" Auth Token:     [DISABLED - open local access]")
         logger.info("=" * 60)
 
-        self._register_mdns()
+        await self._register_mdns()
 
     async def stop(self):
         """Stop server cleanly."""
         logger.info("Shutting down CodeFlow Companion...")
-        self._unregister_mdns()
+        await self._unregister_mdns()
         if self.site:
             await self.site.stop()
         if self.runner:
