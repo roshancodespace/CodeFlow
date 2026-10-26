@@ -7,7 +7,7 @@ ROOT_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
 VERSION=$(cat "$ROOT_DIR/VERSION" 2>/dev/null || echo "1.0.0")
 
 echo "============================================================"
-echo " Building CodeFlow Android Release APK (v$VERSION)"
+echo " Building CodeFlow Android 64-bit Release APK (arm64-v8a) (v$VERSION)"
 echo "============================================================"
 
 cd "$ROOT_DIR/codeflow_app"
@@ -23,18 +23,18 @@ fi
 echo "Using Flutter: $($FLUTTER_BIN --version | head -n 1)"
 
 $FLUTTER_BIN pub get
-$FLUTTER_BIN build apk --release
+$FLUTTER_BIN build apk --release --target-platform android-arm64
 
 RELEASE_DIR="$ROOT_DIR/release"
 mkdir -p "$RELEASE_DIR"
 
-OUTPUT_APK="$ROOT_DIR/codeflow_app/build/app/outputs/flutter-apk/app-release.apk"
-TARGET_APK="$RELEASE_DIR/CodeFlow-Android-v$VERSION.apk"
+OUTPUT_APK=$(find "$ROOT_DIR/codeflow_app/build/app/outputs/flutter-apk" -maxdepth 1 -name "*release*.apk" | head -n 1)
+TARGET_APK="$RELEASE_DIR/CodeFlow-Android-arm64-v$VERSION.apk"
 
-if [ -f "$OUTPUT_APK" ]; then
+if [ -n "$OUTPUT_APK" ] && [ -f "$OUTPUT_APK" ]; then
     cp "$OUTPUT_APK" "$TARGET_APK"
     echo ""
-    echo "[SUCCESS] Release APK built and copied to: $TARGET_APK"
+    echo "[SUCCESS] 64-bit ARM64 Release APK built and copied to: $TARGET_APK"
 else
-    echo "[WARNING] Expected output APK not found at $OUTPUT_APK"
+    echo "[WARNING] Expected output APK not found"
 fi
